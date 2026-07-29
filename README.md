@@ -3,7 +3,7 @@
 > **Orchestrating the Next-Generation Zero-Trust Mesh Network.**  
 > **连接星穹，智驭网络 —— 下一代现代零信任 SDN 编排系统。**
 
-[![GitHub License](https://img.shields.io/badge/License-AGPL%20v3-red.svg?style=flat-square)](LICENSE)
+[![GitHub License](https://img.shields.io/github/license/WuYouOwO/NexusTier?style=flat-square)](LICENSE)
 [![EasyTier Core](https://img.shields.io/badge/EasyTier-v2.6.4-blue?style=flat-square)](https://github.com/EasyTier/EasyTier)
 [![Platform](https://img.shields.io/badge/Platform-Linux%20%7C%20Windows%20%7C%20macOS-orange?style=flat-square)](#)
 
@@ -57,3 +57,24 @@
                +----------------------------------+
                |     客户端 Agent + EasyTier Core |  <--- 纯用户态 L3 转发与安全隧道
                +----------------------------------+
+```
+
+---
+
+## 🛠️ 技术栈 (Tech Stack)
+
+*   **控制面核心 (Control Plane)**: Go (Golang) / GoBGP / Gin / Gorm / Redis / PostgreSQL
+*   **协议转换层 (Protocol Gateway)**: Rust / Tokio / Protobuf
+*   **客户端代理 (Agent & GUI)**: Rust / Go / Tauri / TypeScript
+*   **前端大屏 (Frontend Panel)**: Vue 3 / React / Vite / Tailwind CSS / ECharts GL
+
+---
+
+## 📅 路线图 (Roadmap)
+
+*   [ ] **Phase 1**: 基于原生 EasyTier 核心的双向 RPC 通信对接，打通全球拓扑大屏与配置下发。 (WIP)
+*   [ ] **Phase 2**: 实现分布式 IPAM（IP 地址管理）与声明式有状态 ACL 防火墙。
+*   [ ] **Phase 3**: 推出 NexusTier 多端 GUI Agent，支持企业级 SSO 扫码入网。
+*   [ ] **Phase 4**: 实现零信任安全 SSH 终端与基于虚拟智能卡重定向的免密 RDP 连接。
+
+---
