@@ -33,5 +33,5 @@ Rust 网关只负责控制通道兼容、在线会话管理和反向遥测 RPC�
 | NexusTier Gateway | `0.1.0` |
 | EasyTier | `v2.6.4` |
 | EasyTier commit | `8428a89d2dabc94c97d370ec607c6ca142473626` |
-| Rust MSRV | `1.88` |
+| Rust MSRV | `1.95` |
 | 许可证 | AGPLv3 |

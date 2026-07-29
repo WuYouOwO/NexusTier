@@ -10,7 +10,7 @@ This document is the engineering handoff for an AI agent or developer continuing
 - Current implemented product component: Rust native EasyTier gateway
 - Gateway package: `nexustier-gateway 0.1.0`
 - Current workspace language: Rust 2024 edition
-- Declared Rust MSRV: `1.88`
+- Declared Rust MSRV: `1.95`
 - Latest completed documentation milestone before this handoff: `6824e59`
 - First complete gateway milestone: `fbc1a9d`
 
@@ -82,6 +82,8 @@ easytier = {
 ```
 
 The commit corresponds to EasyTier tag `v2.6.4`. Do not switch to the upstream default branch or broaden features without an explicit compatibility and build-size reason.
+
+EasyTier v2.6.4 and its `guarden` dependency declare Rust 1.95 as their minimum supported version. Rust 1.88 fails before compilation with an explicit unsupported-rustc error. Keep Cargo metadata and the Docker builder at 1.95 or newer.
 
 ## 5. Implemented Gateway Behavior
 

@@ -50,7 +50,7 @@ sequenceDiagram
 ## 3. 环境要求
 
 - Linux、Windows 或 macOS 开发环境。
-- Rust `1.88` 或更新版本。
+- Rust `1.95` 或更新版本。
 - Protobuf 编译器 `protoc`。
 - 构建时可访问 crates.io 和固定的 EasyTier Git revision。
 

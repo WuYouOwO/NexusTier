@@ -1,4 +1,4 @@
-FROM rust:1.88-bookworm AS builder
+FROM rust:1.95-bookworm AS builder
 
 ARG HTTPS_PROXY
 ARG HTTP_PROXY

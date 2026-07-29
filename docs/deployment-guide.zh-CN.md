@@ -22,7 +22,7 @@
 | EasyTier 协议基线 | `v2.6.4` |
 | EasyTier commit | `8428a89d2dabc94c97d370ec607c6ca142473626` |
 | 原生验证环境 | Debian 13 x86-64，systemd 257 |
-| Rust MSRV | 声明为 `1.88` |
+| Rust MSRV | `1.95` |
 | 原生 release 构建 | 已验证 |
 | HTTP 与优雅关闭烟测 | 已验证 |
 | Dockerfile | 已提供并完成静态审查 |
@@ -95,7 +95,7 @@ apt-get install -y build-essential git protobuf-compiler ca-certificates
 protoc --version
 ```
 
-安装 Rust `1.88` 或更新版本，并确认：
+安装 Rust `1.95` 或更新版本，并确认：
 
 ```bash
 rustc --version
