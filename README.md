@@ -3,7 +3,7 @@
 > **Orchestrating the Next-Generation Zero-Trust Mesh Network.**  
 > **连接星穹，智驭网络 —— 下一代现代零信任 SDN 编排系统。**
 
-[![GitHub License](https://img.shields.io/github/license/WuYouOwO/NexusTier?style=flat-square)](LICENSE)
+[![GitHub License](https://img.shields.io/badge/License-AGPL%20v3-red.svg?style=flat-square)](LICENSE)
 [![EasyTier Core](https://img.shields.io/badge/EasyTier-v2.6.4-blue?style=flat-square)](https://github.com/EasyTier/EasyTier)
 [![Platform](https://img.shields.io/badge/Platform-Linux%20%7C%20Windows%20%7C%20macOS-orange?style=flat-square)](#)
 
