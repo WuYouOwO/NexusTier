@@ -19,7 +19,7 @@ The gateway uses EasyTier's native bidirectional RPC transport. It does not prox
 Prerequisites:
 
 - Rust 1.95 or newer
-- `protoc` (`protobuf-compiler` on Debian/Ubuntu)
+- `protoc` and standard Protobuf definitions (`protobuf-compiler` and `libprotobuf-dev` on Debian/Ubuntu)
 
 ```bash
 cargo run --locked --package nexustier-gateway -- \

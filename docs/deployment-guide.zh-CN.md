@@ -91,9 +91,12 @@ Debian/Ubuntu：
 
 ```bash
 apt-get update
-apt-get install -y build-essential git protobuf-compiler ca-certificates
+apt-get install -y build-essential git libprotobuf-dev protobuf-compiler ca-certificates
 protoc --version
 ```
+
+`libprotobuf-dev` 提供 `prost-wkt-types` 构建脚本所需的
+`google/protobuf/*.proto` 标准定义文件。
 
 安装 Rust `1.95` 或更新版本，并确认：
 

@@ -237,8 +237,11 @@ System prerequisite on Debian/Ubuntu:
 
 ```bash
 apt-get update
-apt-get install -y protobuf-compiler
+apt-get install -y libprotobuf-dev protobuf-compiler
 ```
+
+`libprotobuf-dev` provides the standard `google/protobuf/*.proto` definitions
+required by the `prost-wkt-types` build script.
 
 EasyTier is a large dependency. On a 6 GiB machine, use one Cargo job for release builds:
 

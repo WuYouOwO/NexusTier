@@ -5,7 +5,7 @@ ARG HTTP_PROXY
 ARG ALL_PROXY
 
 RUN apt-get update \
-    && apt-get install --yes --no-install-recommends protobuf-compiler \
+    && apt-get install --yes --no-install-recommends libprotobuf-dev protobuf-compiler \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /src

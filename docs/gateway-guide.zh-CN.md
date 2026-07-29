@@ -51,14 +51,14 @@ sequenceDiagram
 
 - Linux、Windows 或 macOS 开发环境。
 - Rust `1.95` 或更新版本。
-- Protobuf 编译器 `protoc`。
+- Protobuf 编译器 `protoc` 及标准定义文件。
 - 构建时可访问 crates.io 和固定的 EasyTier Git revision。
 
-Debian/Ubuntu 安装 `protoc`：
+Debian/Ubuntu 安装 `protoc` 及标准定义文件：
 
 ```bash
 apt-get update
-apt-get install -y protobuf-compiler
+apt-get install -y libprotobuf-dev protobuf-compiler
 protoc --version
 ```
 
