@@ -1,0 +1,21 @@
+[package]
+name = "nexustier-gateway"
+version = "0.1.0"
+description = "Native EasyTier protocol gateway for NexusTier"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+async-trait.workspace = true
+clap.workspace = true
+dashmap.workspace = true
+easytier.workspace = true
+serde.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+url.workspace = true
+uuid.workspace = true

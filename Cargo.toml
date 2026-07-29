@@ -1,0 +1,22 @@
+[workspace]
+members = ["crates/nexustier-gateway"]
+resolver = "2"
+
+[workspace.package]
+edition = "2024"
+license = "AGPL-3.0-only"
+repository = "https://github.com/WuYouOwO/NexusTier"
+rust-version = "1.88"
+
+[workspace.dependencies]
+anyhow = "1.0.98"
+async-trait = "0.1.88"
+clap = { version = "4.5.40", features = ["derive", "env"] }
+dashmap = "6.1.0"
+easytier = { git = "https://github.com/EasyTier/EasyTier.git", rev = "8428a89d2dabc94c97d370ec607c6ca142473626", default-features = false }
+serde = { version = "1.0.219", features = ["derive"] }
+tokio = { version = "1.45.1", features = ["macros", "rt-multi-thread", "signal", "sync", "time"] }
+tracing = "0.1.41"
+tracing-subscriber = { version = "0.3.19", features = ["env-filter", "fmt"] }
+url = { version = "2.5.4", features = ["serde"] }
+uuid = { version = "1.17.0", features = ["serde", "v4"] }
