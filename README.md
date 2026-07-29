@@ -92,6 +92,7 @@ cargo run --locked --package nexustier-gateway
 *   [中文文档索引](docs/README.md)
 *   [Rust 网关使用与部署手册](docs/gateway-guide.zh-CN.md)
 *   [Rust 网关源码架构解析](docs/gateway-code.zh-CN.md)
+*   [AI Agent Engineering Handoff (English)](docs/AGENT_HANDOFF.md)
 
 英文配置、API 与容器说明见 [Rust 网关文档](crates/nexustier-gateway/README.md)。
 

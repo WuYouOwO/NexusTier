@@ -4,6 +4,7 @@
 
 ## 文档导航
 
+- [AI Agent Engineering Handoff (English)](AGENT_HANDOFF.md)
 - [Rust 网关使用与部署手册](gateway-guide.zh-CN.md)
 - [Rust 网关源码架构解析](gateway-code.zh-CN.md)
 - [项目总览](../README.md)
