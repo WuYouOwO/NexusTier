@@ -87,7 +87,13 @@
 cargo run --locked --package nexustier-gateway
 ```
 
-完整配置、API 与容器说明见 [Rust 网关文档](crates/nexustier-gateway/README.md)。
+中文文档：
+
+*   [中文文档索引](docs/README.md)
+*   [Rust 网关使用与部署手册](docs/gateway-guide.zh-CN.md)
+*   [Rust 网关源码架构解析](docs/gateway-code.zh-CN.md)
+
+英文配置、API 与容器说明见 [Rust 网关文档](crates/nexustier-gateway/README.md)。
 
 ---
 
