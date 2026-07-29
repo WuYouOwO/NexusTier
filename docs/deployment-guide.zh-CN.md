@@ -446,6 +446,26 @@ systemctl start nexustier-gateway.service
 
 仓库根目录包含多阶段 `Dockerfile`。当前开发虚拟机没有 Docker CLI，因此以下流程尚未在该环境实构验证；首次生产使用前必须在具备 Docker 的预发布主机执行完整验收。
 
+GitHub Actions 发布地址：
+
+```text
+ghcr.io/wuyouowo/nexustier
+```
+
+发布规则：
+
+- Pull Request 只构建验证，不推送镜像。
+- 推送到 `main` 后发布 `main`、`latest` 和 `sha-<短提交>` 标签。
+- 推送 `v*.*.*` 版本标签后发布语义版本、主次版本和提交 SHA 标签。
+- 也可以从 GitHub Actions 页面手动运行 `Build and publish container image`。
+- 发布镜像使用 GitHub OIDC 与 Cosign 进行无密钥签名。
+
+拉取 GitHub 已发布镜像：
+
+```bash
+docker pull ghcr.io/wuyouowo/nexustier:latest
+```
+
 ### 10.1 构建镜像
 
 ```bash

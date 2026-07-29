@@ -60,6 +60,22 @@ Telemetry collection uses independent RPC deadlines. A failed instance call is r
 
 ## Container
 
+GitHub Actions builds pull requests without publishing. Pushes to `main`, semantic version tags such as `v0.1.0`, and manual workflow runs publish signed images to:
+
+```text
+ghcr.io/wuyouowo/nexustier
+```
+
+The `main` branch publishes `main`, `latest`, and `sha-<commit>` tags. Version tags publish the semantic version, major/minor, commit SHA, and the metadata action's release tags.
+
+Pull a published image:
+
+```bash
+docker pull ghcr.io/wuyouowo/nexustier:latest
+```
+
+Build locally:
+
 ```bash
 docker build -t nexustier-gateway:dev .
 docker run --rm \
