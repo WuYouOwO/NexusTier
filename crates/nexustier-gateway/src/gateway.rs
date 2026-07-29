@@ -28,20 +28,14 @@ impl Gateway {
         }
     }
 
-    pub async fn run(self) -> anyhow::Result<()> {
-        let (shutdown_tx, shutdown_rx) = watch::channel(false);
-        let signal_task = tokio::spawn(async move {
-            if let Err(error) = tokio::signal::ctrl_c().await {
-                tracing::error!(%error, "failed to install shutdown signal handler");
-            }
-            let _ = shutdown_tx.send(true);
-        });
-        let result = self.serve(shutdown_rx).await;
-        signal_task.abort();
-        result
+    pub fn session_pool(&self) -> SessionPool {
+        self.sessions.clone()
     }
 
-    async fn serve(mut self, mut shutdown_rx: watch::Receiver<bool>) -> anyhow::Result<()> {
+    pub(crate) async fn serve(
+        mut self,
+        mut shutdown_rx: watch::Receiver<bool>,
+    ) -> anyhow::Result<()> {
         self.listener
             .listen()
             .await
@@ -136,6 +130,7 @@ mod tests {
     use std::{sync::Arc, time::Duration};
 
     use easytier::{
+        common::config::{ConfigFileControl, ConfigLoader, TomlConfigLoader},
         instance_manager::NetworkInstanceManager,
         proto::{api::manage::ListNetworkInstanceRequest, rpc_types::controller::BaseController},
         tunnel::udp::UdpTunnelConnector,
@@ -144,6 +139,7 @@ mod tests {
     use tokio::sync::watch;
 
     use super::Gateway;
+    use crate::telemetry::TelemetryCollector;
 
     #[tokio::test]
     async fn native_web_client_registers_and_exposes_management_rpc() {
@@ -159,14 +155,25 @@ mod tests {
         let sessions = gateway.sessions.clone();
         let (shutdown_tx, shutdown_rx) = watch::channel(false);
         let gateway_task = tokio::spawn(gateway.serve(shutdown_rx));
+        let machine_id = uuid::Uuid::new_v4();
+        let manager = Arc::new(NetworkInstanceManager::new());
+        let instance_config = TomlConfigLoader::default();
+        instance_config.set_hostname(Some("telemetry-node".to_string()));
+        instance_config.set_listeners(Vec::new());
+        let mut flags = instance_config.get_flags();
+        flags.no_tun = true;
+        instance_config.set_flags(flags);
+        let instance_id = manager
+            .run_network_instance(instance_config, true, ConfigFileControl::STATIC_CONFIG)
+            .expect("start no-TUN EasyTier instance");
 
         let client = WebClient::new(
             UdpTunnelConnector::new(listen_url),
             "integration-test-token",
-            uuid::Uuid::new_v4(),
+            machine_id,
             "native-integration-client",
             false,
-            Arc::new(NetworkInstanceManager::new()),
+            manager.clone(),
             None,
         );
 
@@ -181,7 +188,7 @@ mod tests {
                         )
                         .await
                         .expect("call native reverse management RPC");
-                    assert!(response.inst_ids.is_empty());
+                    assert_eq!(response.inst_ids.len(), 1);
                     break;
                 }
                 tokio::time::sleep(Duration::from_millis(50)).await;
@@ -191,7 +198,29 @@ mod tests {
         .expect("native client should register before timeout");
 
         assert_eq!(sessions.len(), 1);
+        let telemetry = TelemetryCollector::new(sessions.clone(), Duration::from_secs(2));
+        let session_views = telemetry.sessions().await;
+        assert_eq!(session_views.len(), 1);
+        assert_eq!(session_views[0].machine_id, machine_id);
+        assert_eq!(session_views[0].hostname, "native-integration-client");
+        assert_eq!(session_views[0].running_instance_ids, vec![instance_id]);
+
+        let topology = telemetry.topology().await;
+        assert_eq!(topology.machines.len(), 1);
+        assert_eq!(topology.machines[0].session.machine_id, machine_id);
+        assert!(topology.machines[0].errors.is_empty());
+        assert_eq!(topology.machines[0].instances.len(), 1);
+        let instance = &topology.machines[0].instances[0];
+        assert_eq!(instance.instance_id, instance_id);
+        assert_eq!(instance.node.as_ref().unwrap().hostname, "telemetry-node");
+        assert!(instance.peers.is_empty());
+        assert!(!instance.metrics.is_empty());
+        assert!(instance.errors.is_empty());
+
         drop(client);
+        manager
+            .delete_network_instance(vec![instance_id])
+            .expect("stop no-TUN EasyTier instance");
         shutdown_tx.send(true).expect("request gateway shutdown");
         gateway_task
             .await

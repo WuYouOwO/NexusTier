@@ -150,10 +150,18 @@ impl GatewaySession {
                     });
                 }
 
-                self.heartbeat_rx
-                    .changed()
-                    .await
-                    .map_err(|_| anyhow::anyhow!("session closed before its first heartbeat"))?;
+                tokio::select! {
+                    changed = self.heartbeat_rx.changed() => {
+                        changed.map_err(|_| {
+                            anyhow::anyhow!("session closed before its first heartbeat")
+                        })?;
+                    }
+                    _ = tokio::time::sleep(std::time::Duration::from_millis(100)) => {
+                        if !self.rpc_manager.is_running() {
+                            anyhow::bail!("session closed before its first heartbeat");
+                        }
+                    }
+                }
             }
         })
         .await

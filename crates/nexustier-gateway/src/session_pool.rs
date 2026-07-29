@@ -40,3 +40,33 @@ impl SessionPool {
         self.sessions.is_empty()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use super::SessionPool;
+    use crate::session::GatewaySession;
+
+    #[tokio::test]
+    async fn stale_disconnect_cannot_remove_a_replacement_session() {
+        let pool = SessionPool::default();
+        let machine_id = uuid::Uuid::new_v4();
+        let old_session = Arc::new(GatewaySession::new(
+            "udp://127.0.0.1:10001".parse().unwrap(),
+        ));
+        let new_session = Arc::new(GatewaySession::new(
+            "udp://127.0.0.1:10002".parse().unwrap(),
+        ));
+
+        assert!(pool.insert(machine_id, old_session.clone()).is_none());
+        let replaced = pool
+            .insert(machine_id, new_session.clone())
+            .expect("old session should be replaced");
+        assert!(Arc::ptr_eq(&replaced, &old_session));
+        assert!(!pool.remove_if_current(&machine_id, &old_session));
+        assert_eq!(pool.len(), 1);
+        assert!(pool.remove_if_current(&machine_id, &new_session));
+        assert!(pool.is_empty());
+    }
+}

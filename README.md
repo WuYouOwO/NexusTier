@@ -70,6 +70,27 @@
 
 ---
 
+## 🚀 当前实现 (Current Implementation)
+
+第一阶段的 Rust 原生接入网关已落地：
+
+*   兼容 EasyTier `v2.6.4` 原生 UDP WebClient 协议，默认监听 `22020/UDP`。
+*   支持 Noise + AES-GCM 安全配置通道，不修改 `easytier-core` 客户端代码。
+*   使用 Machine ID 维护并发内存 Session Pool，安全处理断线、重连与连接替换。
+*   通过原生双向 RPC 反向采集 Node、Peer、Route、RTT、流量和 Stats 指标。
+*   在 `127.0.0.1:11211` 暴露只读 `/healthz`、`/readyz`、`/v1/sessions` 和 `/v1/topology` API。
+*   提供非 root 多阶段容器镜像，不需要 TUN 权限或额外 Linux capabilities。
+
+开发运行：
+
+```bash
+cargo run --locked --package nexustier-gateway
+```
+
+完整配置、API 与容器说明见 [Rust 网关文档](crates/nexustier-gateway/README.md)。
+
+---
+
 ## 📅 路线图 (Roadmap)
 
 *   [ ] **Phase 1**: 基于原生 EasyTier 核心的双向 RPC 通信对接，打通全球拓扑大屏与配置下发。 (WIP)

@@ -1,16 +1,13 @@
 use std::{collections::BTreeMap, sync::Arc, time::Duration};
 
-use easytier::{
-    proto::{
-        api::instance::{
-            GetStatsRequest, InstanceIdentifier, ListPeerRequest, ListRouteRequest, MetricSnapshot,
-            NodeInfo, PeerInfo, PeerRoutePair, Route, ShowNodeInfoRequest,
-            instance_identifier::Selector,
-        },
-        api::manage::ListNetworkInstanceRequest,
-        rpc_types::controller::BaseController,
+use easytier::proto::{
+    api::instance::{
+        GetStatsRequest, InstanceIdentifier, ListPeerRequest, ListRouteRequest, MetricSnapshot,
+        NodeInfo, PeerInfo, PeerRoutePair, Route, ShowNodeInfoRequest,
+        instance_identifier::Selector,
     },
-    utils::PeerRoutePair as _,
+    api::manage::ListNetworkInstanceRequest,
+    rpc_types::controller::BaseController,
 };
 use serde::Serialize;
 use tokio::task::JoinSet;
@@ -42,7 +39,6 @@ pub struct DeviceView {
     pub os_type: String,
     pub os_version: String,
     pub distribution: String,
-    pub arch: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -313,7 +309,6 @@ impl TryFrom<crate::session::SessionSnapshot> for SessionView {
                 os_type: device.os_type,
                 os_version: device.version,
                 distribution: device.distribution,
-                arch: device.arch,
             }),
         })
     }
@@ -430,4 +425,72 @@ fn unix_time_ms() -> u64 {
         .as_millis()
         .try_into()
         .unwrap_or(u64::MAX)
+}
+
+#[cfg(test)]
+mod tests {
+    use easytier::proto::api::instance::{PeerConnInfo, PeerConnStats, PeerInfo, Route};
+
+    use super::join_peers_and_routes;
+
+    #[test]
+    fn direct_peer_uses_connection_telemetry() {
+        let views = join_peers_and_routes(
+            vec![PeerInfo {
+                peer_id: 7,
+                conns: vec![PeerConnInfo {
+                    conn_id: "primary".to_string(),
+                    peer_id: 7,
+                    stats: Some(PeerConnStats {
+                        rx_bytes: 1_024,
+                        tx_bytes: 2_048,
+                        latency_us: 12_500,
+                        ..Default::default()
+                    }),
+                    loss_rate: 0.025,
+                    ..Default::default()
+                }],
+                default_conn_id: None,
+                ..Default::default()
+            }],
+            vec![Route {
+                peer_id: 7,
+                hostname: "direct-peer".to_string(),
+                next_hop_peer_id: 7,
+                cost: 1,
+                path_latency: 99,
+                ..Default::default()
+            }],
+        );
+
+        assert_eq!(views.len(), 1);
+        assert!(views[0].direct);
+        assert_eq!(views[0].latency_ms, Some(12.5));
+        assert_eq!(views[0].rx_bytes, Some(1_024));
+        assert_eq!(views[0].tx_bytes, Some(2_048));
+        assert_eq!(views[0].loss_rate, Some(0.02500000037252903));
+    }
+
+    #[test]
+    fn relayed_peer_uses_route_path_latency() {
+        let views = join_peers_and_routes(
+            Vec::new(),
+            vec![Route {
+                peer_id: 9,
+                hostname: "relayed-peer".to_string(),
+                next_hop_peer_id: 7,
+                cost: 2,
+                path_latency: 42,
+                ..Default::default()
+            }],
+        );
+
+        assert_eq!(views.len(), 1);
+        assert!(!views[0].direct);
+        assert_eq!(views[0].next_hop_peer_id, 7);
+        assert_eq!(views[0].path_cost, 2);
+        assert_eq!(views[0].latency_ms, Some(42.0));
+        assert_eq!(views[0].rx_bytes, None);
+        assert_eq!(views[0].tx_bytes, None);
+    }
 }
