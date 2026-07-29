@@ -218,6 +218,7 @@ The container:
 - Requires no TUN device.
 - Requires no `NET_ADMIN` capability.
 - Exposes `22020/udp` and `11211/tcp`.
+- Declares `SIGINT` as its stop signal so Docker uses the gateway's graceful shutdown path.
 - Uses `/healthz` as its health check.
 
 ## 9. Build and Test Environment

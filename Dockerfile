@@ -29,6 +29,8 @@ EXPOSE 11211/tcp
 ENV NEXUSTIER_GATEWAY_API_ADDR=0.0.0.0:11211
 ENV RUST_LOG=info
 
+STOPSIGNAL SIGINT
+
 HEALTHCHECK --interval=15s --timeout=3s --start-period=10s --retries=3 \
     CMD curl --fail --silent --show-error http://127.0.0.1:11211/healthz || exit 1
 

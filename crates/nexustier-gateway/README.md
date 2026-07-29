@@ -2,7 +2,7 @@
 
 `nexustier-gateway` is the native EasyTier protocol boundary for NexusTier. It accepts unmodified EasyTier v2.6.4 web clients over UDP, keeps active sessions in memory, and exposes a localhost-only read API for the future Go controller.
 
-Chinese documentation: [usage and deployment](../../docs/gateway-guide.zh-CN.md), [source architecture](../../docs/gateway-code.zh-CN.md).
+Chinese documentation: [production deployment](../../docs/deployment-guide.zh-CN.md), [usage and API](../../docs/gateway-guide.zh-CN.md), [source architecture](../../docs/gateway-code.zh-CN.md).
 
 ## Protocol Baseline
 
