@@ -3,7 +3,12 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use easytier::{
     proto::{
-        api::manage::{WebClientService, WebClientServiceClientFactory},
+        api::{
+            instance::{
+                PeerManageRpc, PeerManageRpcClientFactory, StatsRpc, StatsRpcClientFactory,
+            },
+            manage::{WebClientService, WebClientServiceClientFactory},
+        },
         rpc_impl::bidirect::BidirectRpcManager,
         rpc_types::{self, controller::BaseController},
         web::{
@@ -16,17 +21,31 @@ use easytier::{
 };
 use tokio::sync::{RwLock, watch};
 use url::Url;
+use uuid::Uuid;
 
 #[derive(Clone, Debug)]
 pub struct SessionSnapshot {
     pub remote_url: Url,
     pub heartbeat: HeartbeatRequest,
+    pub connected_at_ms: u64,
+    pub last_heartbeat_at_ms: u64,
+}
+
+impl SessionSnapshot {
+    pub fn machine_id(&self) -> anyhow::Result<Uuid> {
+        self.heartbeat
+            .machine_id
+            .map(Into::into)
+            .ok_or_else(|| anyhow::anyhow!("heartbeat is missing machine_id"))
+    }
 }
 
 #[derive(Debug)]
 struct SessionState {
     remote_url: Url,
     heartbeat: Option<HeartbeatRequest>,
+    connected_at_ms: u64,
+    last_heartbeat_at_ms: u64,
 }
 
 #[derive(Clone)]
@@ -48,7 +67,10 @@ impl WebServerService for GatewayRpcService {
             return Err(anyhow::anyhow!("heartbeat is missing machine_id").into());
         }
 
-        self.state.write().await.heartbeat = Some(request.clone());
+        let mut state = self.state.write().await;
+        state.heartbeat = Some(request.clone());
+        state.last_heartbeat_at_ms = unix_time_ms();
+        drop(state);
         self.heartbeat_tx.send_replace(Some(request));
         Ok(HeartbeatResponse {})
     }
@@ -72,9 +94,12 @@ pub struct GatewaySession {
 
 impl GatewaySession {
     pub fn new(remote_url: Url) -> Self {
+        let connected_at_ms = unix_time_ms();
         let state = Arc::new(RwLock::new(SessionState {
             remote_url,
             heartbeat: None,
+            connected_at_ms,
+            last_heartbeat_at_ms: connected_at_ms,
         }));
         let (heartbeat_tx, heartbeat_rx) = watch::channel(None);
         let rpc_manager =
@@ -120,6 +145,8 @@ impl GatewaySession {
                         heartbeat: state.heartbeat.clone().ok_or_else(|| {
                             anyhow::anyhow!("heartbeat notification arrived without state")
                         })?,
+                        connected_at_ms: state.connected_at_ms,
+                        last_heartbeat_at_ms: state.last_heartbeat_at_ms,
                     });
                 }
 
@@ -133,6 +160,19 @@ impl GatewaySession {
         .map_err(|_| anyhow::anyhow!("timed out waiting for the first heartbeat"))?
     }
 
+    pub async fn snapshot(&self) -> anyhow::Result<SessionSnapshot> {
+        let state = self.state.read().await;
+        Ok(SessionSnapshot {
+            remote_url: state.remote_url.clone(),
+            heartbeat: state
+                .heartbeat
+                .clone()
+                .ok_or_else(|| anyhow::anyhow!("session has not received a heartbeat"))?,
+            connected_at_ms: state.connected_at_ms,
+            last_heartbeat_at_ms: state.last_heartbeat_at_ms,
+        })
+    }
+
     pub fn management_client(
         &self,
     ) -> Box<dyn WebClientService<Controller = BaseController> + Send> {
@@ -140,4 +180,25 @@ impl GatewaySession {
             .rpc_client()
             .scoped_client::<WebClientServiceClientFactory<BaseController>>(1, 1, String::new())
     }
+
+    pub fn peer_client(&self) -> Box<dyn PeerManageRpc<Controller = BaseController> + Send> {
+        self.rpc_manager
+            .rpc_client()
+            .scoped_client::<PeerManageRpcClientFactory<BaseController>>(1, 1, String::new())
+    }
+
+    pub fn stats_client(&self) -> Box<dyn StatsRpc<Controller = BaseController> + Send> {
+        self.rpc_manager
+            .rpc_client()
+            .scoped_client::<StatsRpcClientFactory<BaseController>>(1, 1, String::new())
+    }
+}
+
+fn unix_time_ms() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis()
+        .try_into()
+        .unwrap_or(u64::MAX)
 }

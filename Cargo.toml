@@ -11,11 +11,14 @@ rust-version = "1.88"
 [workspace.dependencies]
 anyhow = "1.0.98"
 async-trait = "0.1.88"
+axum = "0.8.4"
 clap = { version = "4.5.40", features = ["derive", "env"] }
 dashmap = "6.1.0"
 easytier = { git = "https://github.com/EasyTier/EasyTier.git", rev = "8428a89d2dabc94c97d370ec607c6ca142473626", default-features = false }
 serde = { version = "1.0.219", features = ["derive"] }
+serde_json = "1.0.140"
 tokio = { version = "1.45.1", features = ["macros", "rt-multi-thread", "signal", "sync", "time"] }
+tower = { version = "0.5.2", features = ["util"] }
 tracing = "0.1.41"
 tracing-subscriber = { version = "0.3.19", features = ["env-filter", "fmt"] }
 url = { version = "2.5.4", features = ["serde"] }

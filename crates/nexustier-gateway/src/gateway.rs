@@ -1,31 +1,30 @@
 use std::{sync::Arc, time::Duration};
 
 use anyhow::Context;
-use dashmap::DashMap;
 use easytier::{
     tunnel::{TunnelListener, udp::UdpTunnelListener},
     web_client::security,
 };
-use tokio::{
-    sync::{RwLock, watch},
-    task::JoinSet,
-};
+use tokio::{sync::watch, task::JoinSet};
 use url::Url;
 
-use crate::session::{GatewaySession, SessionSnapshot};
+use crate::{
+    session::{GatewaySession, SessionSnapshot},
+    session_pool::SessionPool,
+};
 
 const FIRST_HEARTBEAT_TIMEOUT: Duration = Duration::from_secs(15);
 
 pub struct Gateway {
     listener: UdpTunnelListener,
-    sessions: Arc<DashMap<Url, Arc<RwLock<GatewaySession>>>>,
+    sessions: SessionPool,
 }
 
 impl Gateway {
     pub fn new(listen_url: Url) -> Self {
         Self {
             listener: UdpTunnelListener::new(listen_url),
-            sessions: Arc::new(DashMap::new()),
+            sessions: SessionPool::default(),
         }
     }
 
@@ -87,7 +86,7 @@ impl Gateway {
 
     async fn accept_session(
         tunnel: Box<dyn easytier::tunnel::Tunnel>,
-        sessions: Arc<DashMap<Url, Arc<RwLock<GatewaySession>>>>,
+        sessions: SessionPool,
     ) -> anyhow::Result<()> {
         let (tunnel, secure) = security::accept_or_upgrade_server_tunnel(tunnel)
             .await
@@ -104,18 +103,19 @@ impl Gateway {
         let snapshot = session
             .wait_for_first_heartbeat(FIRST_HEARTBEAT_TIMEOUT)
             .await?;
-        let session = Arc::new(RwLock::new(session));
+        let machine_id = snapshot.machine_id()?;
+        let session = Arc::new(session);
 
-        if let Some(previous) = sessions.insert(remote_url.clone(), session.clone()) {
-            previous.read().await.stop().await;
+        if let Some(previous) = sessions.insert(machine_id, session.clone()) {
+            previous.stop().await;
         }
 
         Self::log_connected(&snapshot, secure);
-        while session.read().await.is_running() {
+        while session.is_running() {
             tokio::time::sleep(Duration::from_secs(1)).await;
         }
-        sessions.remove_if(&remote_url, |_, current| Arc::ptr_eq(current, &session));
-        tracing::info!(%remote_url, "EasyTier session disconnected");
+        sessions.remove_if_current(&machine_id, &session);
+        tracing::info!(%remote_url, %machine_id, "EasyTier session disconnected");
         Ok(())
     }
 
@@ -172,8 +172,7 @@ mod tests {
 
         tokio::time::timeout(Duration::from_secs(20), async {
             loop {
-                if let Some(session) = sessions.iter().next().map(|entry| entry.value().clone()) {
-                    let session = session.read().await;
+                if let Some(session) = sessions.sessions().into_iter().next() {
                     let response = session
                         .management_client()
                         .list_network_instance(

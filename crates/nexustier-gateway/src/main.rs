@@ -1,6 +1,8 @@
 mod config;
 mod gateway;
 mod session;
+mod session_pool;
+mod telemetry;
 
 use clap::Parser;
 use config::GatewayConfig;
