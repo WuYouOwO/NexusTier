@@ -3,6 +3,11 @@
 本目录保存跨语言控制面边界。Rust 网关是 topology v1 的生产者，当前 Go
 控制器 WIP 是严格消费者。
 
+部署和使用入口：
+
+- [当前版本端到端部署指南](../docs/current-deployment-guide.zh-CN.md)
+- [当前版本用户教程](../docs/current-usage-guide.zh-CN.md)
+
 | 文件 | 用途 |
 | --- | --- |
 | `topology-v1.schema.json` | `/v1/topology` 的 JSON Schema 2020-12 定义 |
@@ -19,6 +24,8 @@
 - 消费者必须根据 `errors[].code` 判断错误类别，`message` 仅用于诊断。
 - 局部错误不等价于机器离线，控制器不得因此删除上次成功状态。
 - 顶层 `collection_timeout` 表示总期限到达；`machines` 仍包含期限前完成的结果。
+- 所有毫秒时间戳不得晚于 `9999-12-31T23:59:59.999Z`，以保持 Go/PostgreSQL 范围一致。
+- Peer ID 是网络实例作用域内的 `uint32`，不是全局设备 ID。
 
 Rust 生产者通过 `topology_v1_fixture_matches_the_producer_contract` 测试锁定
 fixture。Go 控制器通过 `TestClientDecodesSharedTopologyFixture` 使用同一

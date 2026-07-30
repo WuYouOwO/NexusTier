@@ -1,4 +1,4 @@
-# NexusTier Controller（WIP）
+# NexusTier Controller 遥测摄取服务（WIP）
 
 `nexustier-controller` 是当前仓库中的 Go 控制面遥测摄取基础。它定时读取
 Rust Gateway 的 `nexustier.topology.v1` 契约，在一个 PostgreSQL 事务中
@@ -6,6 +6,12 @@ Rust Gateway 的 `nexustier.topology.v1` 契约，在一个 PostgreSQL 事务中
 
 该模块尚未发布稳定镜像，也不提供公开认证 API、Redis、WebSocket、IPAM
 或 ACL。当前 API 只用于进程、数据库和摄取状态检查。
+
+完整安装 Gateway、Controller 和 PostgreSQL 请使用
+[当前版本端到端部署指南](../docs/current-deployment-guide.zh-CN.md)；接入节点、
+查看实时拓扑和持久化状态见[当前版本用户教程](../docs/current-usage-guide.zh-CN.md)。
+
+当前已验证源码提交为 `654c70fbb70289c5313f7685abff72a59b3c9f7b`。
 
 ## 能力
 
@@ -42,13 +48,18 @@ Rust Gateway 的 `nexustier.topology.v1` 契约，在一个 PostgreSQL 事务中
 先启动 PostgreSQL 和 Rust Gateway，然后在仓库根目录执行：
 
 ```bash
-export NEXUSTIER_CONTROLLER_DATABASE_URL='postgres://nexustier:password@127.0.0.1:5432/nexustier?sslmode=require'
-export NEXUSTIER_CONTROLLER_GATEWAY_URL='http://127.0.0.1:11211'
-go run ./controller/cmd/nexustier-controller
+set -a
+. "${HOME}/.config/nexustier/controller.env"
+set +a
+go -C controller run ./cmd/nexustier-controller
 ```
 
 迁移在启动时自动执行。生产环境应使用独立数据库角色、TLS、备份和最小网络
-访问策略，不要提交连接 URL 或密码。
+访问策略，不要提交连接 URL 或密码。开发环境文件应放在仓库外并保持 `0600`；
+至少设置数据库 URL 和 Gateway URL。
+
+Controller 当前没有容器镜像。生产样例使用固定源码提交构建二进制并通过 systemd
+运行，具体命令和加固单元见端到端部署指南。
 
 ## API
 
@@ -87,8 +98,10 @@ go test -race ./internal/gatewayclient ./internal/poller ./internal/api
 PostgreSQL 集成测试需要专用空数据库：
 
 ```bash
-export NEXUSTIER_TEST_DATABASE_URL='postgres://postgres:password@127.0.0.1:5432/nexustier_test?sslmode=require'
+read -rsp 'URL-encoded test database password: ' TEST_DB_PASSWORD && echo
+export NEXUSTIER_TEST_DATABASE_URL="postgres://nexustier:${TEST_DB_PASSWORD}@127.0.0.1:5432/nexustier_test?sslmode=disable"
 go test ./internal/ingest -count=1
+unset NEXUSTIER_TEST_DATABASE_URL TEST_DB_PASSWORD
 ```
 
 测试会 `TRUNCATE telemetry_collection_runs CASCADE`，绝不能指向生产或包含

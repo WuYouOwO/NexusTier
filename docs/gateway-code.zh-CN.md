@@ -1,5 +1,8 @@
 # Rust 网关源码架构解析
 
+当前完整栈部署见[端到端部署指南](current-deployment-guide.zh-CN.md)，节点接入和
+状态查看见[用户教程](current-usage-guide.zh-CN.md)。
+
 ## 1. 设计目标
 
 网关源码围绕四个约束组织：

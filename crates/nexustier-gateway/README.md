@@ -1,8 +1,8 @@
 # NexusTier Gateway
 
-`nexustier-gateway` is the native EasyTier protocol boundary for NexusTier. It accepts unmodified EasyTier v2.6.4 web clients over UDP, keeps active sessions in memory, and exposes a localhost-only read API for the future Go controller.
+`nexustier-gateway` is the native EasyTier protocol boundary for NexusTier. It accepts unmodified EasyTier v2.6.4 web clients over UDP, keeps active sessions in memory, and exposes an internal read API consumed by the Go telemetry controller.
 
-Chinese documentation: [production deployment](../../docs/deployment-guide.zh-CN.md), [usage and API](../../docs/gateway-guide.zh-CN.md), [source architecture](../../docs/gateway-code.zh-CN.md).
+Chinese documentation: [full-stack deployment](../../docs/current-deployment-guide.zh-CN.md), [user tutorial](../../docs/current-usage-guide.zh-CN.md), [Gateway-only deployment](../../docs/deployment-guide.zh-CN.md), [usage and API](../../docs/gateway-guide.zh-CN.md), [source architecture](../../docs/gateway-code.zh-CN.md).
 
 ## Protocol Baseline
 
@@ -28,9 +28,9 @@ cargo run --locked --package nexustier-gateway -- \
   --api-addr 127.0.0.1:11211
 ```
 
-For a task-oriented Chinese guide covering the published image, EasyTier client
+For a task-oriented Chinese guide covering the current published image, EasyTier client
 registration, telemetry queries, upgrades, and rollback, see the
-[NexusTier Gateway 0.1.0 usage guide](../../docs/usage-guide.zh-CN.md).
+[Gateway usage guide](../../docs/usage-guide.zh-CN.md).
 
 Configure an EasyTier client to use the NexusTier endpoint as its config server. The exact EasyTier CLI flag depends on the client distribution; the endpoint is:
 
@@ -84,10 +84,19 @@ The `main` branch publishes `main`, `latest`, and `sha-<commit>` tags. Version t
 
 Every image build now depends on a separate quality job that runs locked tests, strict Clippy, rustfmt, and topology contract asset checks. Pull requests receive read-only repository/package permissions and no OIDC token; publishing and signing permissions are enabled only for non-PR builds.
 
+Current verified image baseline:
+
+```text
+ghcr.io/wuyouowo/nexustier:sha-654c70f
+sha256:fe7dbc15f1b96955fac429f3e3825c2f71f57aacbf4e415c2b4a8c7cbb4b7028
+```
+
+GitHub Actions run `30518033355` passed Rust, Go, PostgreSQL integration, image publication, Cosign signing, and summary steps.
+
 Pull a published image:
 
 ```bash
-docker pull ghcr.io/wuyouowo/nexustier:latest
+docker pull ghcr.io/wuyouowo/nexustier:sha-654c70f
 ```
 
 Build locally:

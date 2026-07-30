@@ -1,8 +1,8 @@
-# NexusTier Gateway 0.1.0 使用指南
+# NexusTier Gateway 当前版本专项使用指南
 
-本文面向希望直接运行当前版本 NexusTier Gateway 的用户，覆盖镜像拉取、服务启动、EasyTier 客户端接入、状态检查、遥测查询、升级和回滚。
+本文只讲当前 Gateway 的镜像拉取、服务启动、EasyTier 客户端接入、实时遥测、升级和回滚。需要部署 Controller 和 PostgreSQL 时，请直接使用[当前版本端到端部署指南](current-deployment-guide.zh-CN.md)；面向普通使用者的完整操作流程见[当前版本用户教程](current-usage-guide.zh-CN.md)。
 
-> 当前仓库正在开发下一阶段 WIP。下面固定到 `sha-fd554d8` 的已发布 0.1.0 镜像尚不包含共享 Token 校验；从当前源码构建的网关已经强制安全心跳，并支持可选 `NEXUSTIER_GATEWAY_ADMISSION_TOKEN`。
+> 本文固定到已验证提交 `654c70f`。对应镜像已经包含安全心跳、可选共享 Token 校验、topology v1 契约、单飞采集和短期缓存。
 
 更完整的生产主机、安全加固、systemd、防火墙和 NAT 配置参见[生产部署指南](deployment-guide.zh-CN.md)；所有 API 字段及 JSON 示例参见[Rust 网关使用与部署手册](gateway-guide.zh-CN.md)。
 
@@ -11,10 +11,11 @@
 | 项目 | 当前值 |
 | --- | --- |
 | NexusTier Gateway | `0.1.0` |
+| 源码提交 | `654c70fbb70289c5313f7685abff72a59b3c9f7b` |
 | EasyTier 兼容基线 | `v2.6.4` |
 | 容器仓库 | `ghcr.io/wuyouowo/nexustier` |
-| 固定镜像标签 | `sha-fd554d8` |
-| 发布镜像 digest | `sha256:9ca6964be757d548c66037358285d1a27fca951f7c98776e9162562ea78f2cd9` |
+| 固定镜像标签 | `sha-654c70f` |
+| 发布镜像 digest | `sha256:fe7dbc15f1b96955fac429f3e3825c2f71f57aacbf4e415c2b4a8c7cbb4b7028` |
 | EasyTier 控制通道 | `22020/UDP` |
 | 本地只读 API | `127.0.0.1:11211/TCP` |
 
@@ -22,13 +23,14 @@
 
 - 接收未修改的 EasyTier v2.6.4 WebClient 连接。
 - 使用 Noise 握手和 AES-GCM 建立安全配置通道。
+- 拒绝明文心跳，可选校验共享准入 Token，并固定会话 Machine ID。
 - 按 Machine ID 维护在线会话，并安全处理重连替换。
 - 反向读取客户端本地网络实例的 Node、Peer、Route、RTT、流量和 Stats。
 - 提供 `/healthz`、`/readyz`、`/v1/sessions` 和 `/v1/topology` 只读 API。
 
 当前版本尚未实现：
 
-- 已发布的 Gateway 0.1.0 镜像不包含当前仓库中的 Go 控制器 WIP。
+- Gateway 镜像不包含 Go Controller；Controller 当前从同一源码提交构建。
 - Web 控制台和 Redis。
 - 用户登录、RBAC、OIDC、IPAM 和 ACL 策略下发。
 - 通过网关创建或修改 EasyTier 网络实例。
@@ -54,14 +56,14 @@
 直接使用当前稳定发布：
 
 ```bash
-docker pull ghcr.io/wuyouowo/nexustier:sha-fd554d8
+docker pull ghcr.io/wuyouowo/nexustier:sha-654c70f
 ```
 
 需要完全固定构建产物时使用 digest：
 
 ```bash
 docker pull \
-  ghcr.io/wuyouowo/nexustier@sha256:9ca6964be757d548c66037358285d1a27fca951f7c98776e9162562ea78f2cd9
+  ghcr.io/wuyouowo/nexustier@sha256:fe7dbc15f1b96955fac429f3e3825c2f71f57aacbf4e415c2b4a8c7cbb4b7028
 ```
 
 `latest` 跟随 `main` 更新，适合体验，不建议作为无人值守生产部署的唯一版本约束。
@@ -73,10 +75,19 @@ cosign verify \
   --certificate-identity \
   'https://github.com/WuYouOwO/NexusTier/.github/workflows/docker-publish.yml@refs/heads/main' \
   --certificate-oidc-issuer 'https://token.actions.githubusercontent.com' \
-  'ghcr.io/wuyouowo/nexustier@sha256:9ca6964be757d548c66037358285d1a27fca951f7c98776e9162562ea78f2cd9'
+  'ghcr.io/wuyouowo/nexustier@sha256:fe7dbc15f1b96955fac429f3e3825c2f71f57aacbf4e415c2b4a8c7cbb4b7028'
 ```
 
 ### 2.3 启动容器
+
+先创建只允许当前用户读取的环境文件：
+
+```bash
+umask 077
+printf 'NEXUSTIER_GATEWAY_ADMISSION_TOKEN=' >gateway.env
+openssl rand -hex 32 >>gateway.env
+printf 'NEXUSTIER_GATEWAY_API_ADDR=0.0.0.0:11211\n' >>gateway.env
+```
 
 ```bash
 docker run -d \
@@ -87,12 +98,14 @@ docker run -d \
   --tmpfs /tmp:rw,noexec,nosuid,size=16m \
   --cap-drop ALL \
   --security-opt no-new-privileges:true \
+  --env-file ./gateway.env \
   -p 22020:22020/udp \
   -p 127.0.0.1:11211:11211/tcp \
-  ghcr.io/wuyouowo/nexustier:sha-fd554d8
+  ghcr.io/wuyouowo/nexustier@sha256:fe7dbc15f1b96955fac429f3e3825c2f71f57aacbf4e415c2b4a8c7cbb4b7028
 ```
 
 镜像使用 UID `10001` 的非 root 用户，不创建 TUN 设备，也不需要 `NET_ADMIN` 或其他额外 capabilities。
+保存生成的 Token，用于 EasyTier 客户端接入；不要提交 `gateway.env`。
 
 ### 2.4 检查服务
 
@@ -124,26 +137,27 @@ udp://<网关域名或 IP>:22020/<非空 Token>
 例如：
 
 ```text
-udp://gateway.example.com:22020/bootstrap
+udp://gateway.example.com:22020/<环境文件中的共享Token>
 ```
 
-Token 随心跳进入网关，但不会出现在只读 API 响应中。当前源码设置 `NEXUSTIER_GATEWAY_ADMISSION_TOKEN=bootstrap` 后会拒绝其他 Token；这只是共享启动凭据，不应视为完整的用户授权机制。已发布的固定 0.1.0 镜像仍不执行该校验。
+Token 随心跳进入网关，但不会出现在只读 API 响应中。设置 `NEXUSTIER_GATEWAY_ADMISSION_TOKEN` 后会拒绝其他 Token；这只是共享启动凭据，不应视为完整的用户授权机制。
 
 ### 3.2 使用 CLI 启动客户端
 
 仅注册客户端会话：
 
 ```bash
-easytier-core \
-  --config-server 'udp://gateway.example.com:22020/bootstrap' \
-  --machine-id '11111111-2222-3333-4444-555555555555'
+read -rsp 'Gateway admission token: ' GATEWAY_TOKEN && echo
+export ET_CONFIG_SERVER="udp://gateway.example.com:22020/${GATEWAY_TOKEN}"
+export ET_MACHINE_ID='11111111-2222-3333-4444-555555555555'
+unset GATEWAY_TOKEN
+easytier-core
 ```
 
 也可以使用环境变量：
 
 ```bash
-export ET_CONFIG_SERVER='udp://gateway.example.com:22020/bootstrap'
-export ET_MACHINE_ID='11111111-2222-3333-4444-555555555555'
+test -n "${ET_CONFIG_SERVER:-}" && test -n "${ET_MACHINE_ID:-}"
 easytier-core
 ```
 
@@ -154,10 +168,11 @@ Machine ID 应在同一设备上保持稳定。更换 Machine ID 会被网关识
 当前网关不会下发网络实例配置。若要让 `/v1/topology` 返回 Node、Peer、Route 和 Stats，客户端必须同时加载已有 EasyTier 配置：
 
 ```bash
-easytier-core \
-  --config-server 'udp://gateway.example.com:22020/bootstrap' \
-  --machine-id '11111111-2222-3333-4444-555555555555' \
-  --config-file /etc/easytier/node.toml
+read -rsp 'Gateway admission token: ' GATEWAY_TOKEN && echo
+export ET_CONFIG_SERVER="udp://gateway.example.com:22020/${GATEWAY_TOKEN}"
+export ET_MACHINE_ID='11111111-2222-3333-4444-555555555555'
+unset GATEWAY_TOKEN
+easytier-core --config-file /etc/easytier/node.toml
 ```
 
 EasyTier 数据面仍按 `/etc/easytier/node.toml` 运行。节点之间的加密流量、NAT 穿透和 Mesh 路由不经过 NexusTier Gateway。
@@ -274,12 +289,12 @@ docker logs --follow nexustier-gateway
 ```bash
 docker run ... \
   -e NEXUSTIER_GATEWAY_RPC_TIMEOUT_MS=10000 \
-  ghcr.io/wuyouowo/nexustier:sha-fd554d8
+  ghcr.io/wuyouowo/nexustier:sha-654c70f
 ```
 
 默认值为 `5000` 毫秒。该超时分别应用到每次反向 RPC，不是整份拓扑请求的总超时。
 
-当前源码还提供三项整轮采集保护：
+当前镜像还提供三项整轮采集保护：
 
 ```bash
 -e NEXUSTIER_GATEWAY_COLLECTION_TIMEOUT_MS=15000 \

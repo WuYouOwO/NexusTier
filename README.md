@@ -17,7 +17,19 @@
 
 ---
 
-## ✨ 核心特性 (Key Features)
+## ✅ 当前可用能力 (Available Today)
+
+*   **原生 EasyTier 安全接入**：兼容 EasyTier v2.6.4 UDP WebClient，支持 Noise + AES-GCM、安全心跳、共享准入 Token 和 Machine ID 重连保护。
+*   **实时拓扑遥测**：反向采集 Node、Peer、Route、RTT、丢包、流量和 Stats，提供部分成功、结构化错误、单飞和有界采集。
+*   **版本化控制面契约**：Rust Gateway 生产 `nexustier.topology.v1`，Go Controller 严格校验并消费同一 Schema/fixture。
+*   **PostgreSQL 持久化**：幂等保存 Machine、Instance、Node、当前 Peer 链路、指标样本和采集错误，保护乱序和局部失败状态。
+*   **内部运维接口**：Gateway 和 Controller 提供回环/私网健康、就绪和摄取状态 API。
+
+当前没有 Web UI、OIDC/RBAC、IPAM、ACL、SSH/RDP 或 Redis。当前部署和操作见
+[端到端部署指南](docs/current-deployment-guide.zh-CN.md)与
+[用户教程](docs/current-usage-guide.zh-CN.md)。
+
+## 🎯 产品目标 (Planned Capabilities)
 
 *   **📊 全球拓扑遥测 (Global Topology Telemetry)**
     *   基于 IP 离线库自动进行全球节点地理定位。
@@ -83,13 +95,19 @@
 *   在 `127.0.0.1:11211` 暴露只读 `/healthz`、`/readyz`、`/v1/sessions` 和 `/v1/topology` API。
 *   提供非 root 多阶段容器镜像，不需要 TUN 权限或额外 Linux capabilities。
 
-下一阶段的 Go 控制器遥测摄取基础已进入 WIP：
+Go 控制器遥测摄取基础当前可作为 WIP 完整栈运行：
 
 *   严格消费共享的 `nexustier.topology.v1` 契约。
 *   提供 PostgreSQL migrations 与 Machine、Instance、Node、Peer、Metric、Error 规范化模型。
 *   使用单事务、`collection_id` 和时序门控实现幂等摄取、乱序保护与局部失败保留。
 *   使用超时、抖动和禁止重叠的轮询 worker，并暴露内部健康、就绪与摄取状态 API。
-*   已通过 PostgreSQL 18 集成测试和进程级 Gateway fixture 联调；尚未发布稳定控制器镜像。
+*   已通过 PostgreSQL 18 集成测试和进程级 Gateway fixture 联调；Controller 尚未发布独立镜像，当前从源码构建。
+
+当前已验证发布基线：
+
+*   源码：`654c70fbb70289c5313f7685abff72a59b3c9f7b`。
+*   Gateway 镜像：`ghcr.io/wuyouowo/nexustier:sha-654c70f`。
+*   镜像 digest：`sha256:fe7dbc15f1b96955fac429f3e3825c2f71f57aacbf4e415c2b4a8c7cbb4b7028`。
 
 开发运行：
 
@@ -100,21 +118,28 @@ cargo run --locked --package nexustier-gateway
 控制器开发运行：
 
 ```bash
-export NEXUSTIER_CONTROLLER_DATABASE_URL='postgres://nexustier:password@127.0.0.1:5432/nexustier?sslmode=require'
-go run ./controller/cmd/nexustier-controller
+set -a
+. "${HOME}/.config/nexustier/controller.env"
+set +a
+go -C controller run ./cmd/nexustier-controller
 ```
+
+该文件至少包含 `NEXUSTIER_CONTROLLER_DATABASE_URL`，应位于仓库外并保持 `0600`。
+完整配置见端到端部署指南。
 
 中文文档：
 
 *   [中文文档索引](docs/README.md)
-*   [NexusTier Gateway 0.1.0 使用指南](docs/usage-guide.zh-CN.md)
-*   [NexusTier Gateway 0.1.0 生产部署指南](docs/deployment-guide.zh-CN.md)
+*   [当前版本端到端部署指南](docs/current-deployment-guide.zh-CN.md)
+*   [当前版本用户教程](docs/current-usage-guide.zh-CN.md)
+*   [Gateway 专项使用指南](docs/usage-guide.zh-CN.md)
+*   [Gateway 专项生产部署指南](docs/deployment-guide.zh-CN.md)
 *   [Rust 网关使用与部署手册](docs/gateway-guide.zh-CN.md)
 *   [Rust 网关源码架构解析](docs/gateway-code.zh-CN.md)
 *   [Go 控制器 WIP 运行说明](controller/README.md)
 *   [Go 控制器源码架构解析](docs/controller-code.zh-CN.md)
 *   [AI Agent Engineering Handoff (English)](docs/AGENT_HANDOFF.md)
-*   [下一阶段开发计划（WIP）](docs/development-plan.zh-CN.md)
+*   [遥测摄取基础开发计划（已完成）](docs/development-plan.zh-CN.md)
 
 英文 Gateway 配置、API 与容器说明见 [Rust 网关文档](crates/nexustier-gateway/README.md)。
 

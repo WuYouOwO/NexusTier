@@ -1,9 +1,14 @@
-# NexusTier 下一阶段开发计划（WIP）
+# NexusTier 遥测摄取基础开发计划（已完成）
 
 ## 1. 阶段目标
 
 本阶段交付“可信、可界定、可持久化的遥测摄取基础”，把当前 Rust
 EasyTier 协议网关扩展为 Go 控制器可以稳定依赖的内部数据源。
+
+本计划已在提交 `654c70f` 完成。当前部署和使用请转到：
+
+- [当前版本端到端部署指南](current-deployment-guide.zh-CN.md)
+- [当前版本用户教程](current-usage-guide.zh-CN.md)
 
 本阶段不并行开发 Redis、Web 控制台、IPAM、ACL、SSH 或 RDP。只有在
 PostgreSQL 遥测摄取链路通过验收后，才进入后续产品功能。
@@ -15,7 +20,7 @@ PostgreSQL 遥测摄取链路通过验收后，才进入后续产品功能。
 | 1 | 可信 EasyTier 会话 | 明文探测不能注册；可选 Token 校验；Machine ID 在会话内不可变；聚焦测试通过 | Done |
 | 2 | 版本化遥测契约 | JSON Schema、固定 fixture、采集 ID、开始/完成时间、结构化错误 | Done |
 | 3 | 有界遥测采集 | 单飞、总期限、机器并发上限，不因并发 HTTP 请求放大反向 RPC | Done |
-| 4 | 持续集成门禁 | Rust/Go test、Clippy、fmt、vet、PostgreSQL 集成和契约检查成为镜像构建前置任务 | Implemented，等待工作流首跑 |
+| 4 | 持续集成门禁 | Rust/Go test、Clippy、fmt、vet、PostgreSQL 集成和契约检查成为镜像构建前置任务 | Done，Run `30518033355` 已通过 |
 | 5 | Go 控制器摄取基础 | typed client、PostgreSQL migrations、幂等事务、禁止重叠的轮询 worker、最小健康 API | Done |
 | 6 | 联调与文档 | Rust/Go 全量检查通过，部署和开发文档与实现一致 | Done |
 
@@ -40,17 +45,18 @@ cargo fmt --all -- --check
 git diff --check
 ```
 
-Go 控制器创建后至少执行：
+Go 控制器至少执行：
 
 ```bash
-go test ./...
-go vet ./...
+go -C controller test ./...
+go -C controller vet ./...
 ```
 
 摄取数据库变更还必须在专用空 PostgreSQL 数据库执行：
 
 ```bash
-NEXUSTIER_TEST_DATABASE_URL='<专用测试库 URL>' go test ./internal/ingest -count=1
+NEXUSTIER_TEST_DATABASE_URL='<专用测试库 URL>' \
+	go -C controller test ./internal/ingest -count=1
 ```
 
 当前阶段已在 PostgreSQL 18.4 上验证 migration、幂等重试、UUID payload 冲突、

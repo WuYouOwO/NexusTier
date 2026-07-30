@@ -1,5 +1,8 @@
 # Go 控制器源码架构解析（WIP）
 
+当前运行和部署流程见[当前版本端到端部署指南](current-deployment-guide.zh-CN.md)，
+面向用户的状态查看和 SQL 示例见[当前版本用户教程](current-usage-guide.zh-CN.md)。
+
 ## 1. 模块边界
 
 当前 Go 控制器只完成遥测摄取底座：从 Rust Gateway 拉取版本化拓扑，写入
@@ -121,6 +124,10 @@ API 当前无认证并默认绑定 `127.0.0.1:8080`。后续公开 REST/WebSocke
 - `list_peers` 局部失败保留直连 RTT。
 - 完整快照把消失 Machine/Instance 标记 inactive。
 - 真实进程迁移、首次轮询、API、数据库写入与 SIGTERM 烟测。
+
+当前发布提交 `654c70f` 的 GitHub Actions Run `30518033355` 已验证 Rust、Go、
+PostgreSQL 集成、Gateway 镜像发布与 Cosign 签名。Controller 二进制仍由部署者从
+固定源码提交构建。
 
 ## 10. 下一步
 

@@ -1,5 +1,9 @@
 # Rust 网关使用与部署手册
 
+本文是 Gateway API 字段参考。当前 Gateway + Controller + PostgreSQL 部署流程见
+[端到端部署指南](current-deployment-guide.zh-CN.md)，常用操作见
+[当前版本用户教程](current-usage-guide.zh-CN.md)。
+
 ## 1. 模块定位
 
 `nexustier-gateway` 是 NexusTier 与原生 EasyTier 客户端之间的协议边界。它提供以下能力：
@@ -9,7 +13,7 @@
 - 以 EasyTier Machine ID 为主键维护内存 Session Pool。
 - 通过同一条双向连接反向调用 EasyTier 管理 RPC。
 - 汇总 Node、Peer、Route、RTT、流量和 Stats 指标。
-- 向后续 Go 控制器提供稳定、只读、与 Protobuf 解耦的 JSON API。
+- 向当前 Go Controller 提供稳定、只读、与 Protobuf 解耦的 JSON API。
 
 网关不转发 EasyTier 数据面流量，不创建 TUN 设备，也不参与 Mesh 路由计算。
 
@@ -283,7 +287,7 @@ API 当前无认证层，只允许部署在回环地址或可信私有网络。�
 构建镜像：
 
 ```bash
-docker build -t nexustier-gateway:0.1.0 .
+docker build -t nexustier-gateway:sha-654c70f .
 ```
 
 运行镜像：
@@ -293,7 +297,7 @@ docker run --rm \
   --name nexustier-gateway \
   -p 22020:22020/udp \
   -p 127.0.0.1:11211:11211/tcp \
-  nexustier-gateway:0.1.0
+  nexustier-gateway:sha-654c70f
 ```
 
 镜像特性：

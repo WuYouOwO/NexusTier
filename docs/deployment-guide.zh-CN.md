@@ -1,12 +1,12 @@
-# NexusTier Gateway 0.1.0 部署指南
+# NexusTier Gateway 当前版本专项部署指南
 
 ## 1. 文档范围
 
-本文面向 NexusTier 当前已实现的 `nexustier-gateway 0.1.0`，提供 Linux 单机和 Docker 两种部署路径。
+本文只部署 `nexustier-gateway 0.1.0` 当前源码和镜像，提供 Linux 单机和 Docker 两种路径。完整部署 Gateway、Controller 和 PostgreSQL 请使用[当前版本端到端部署指南](current-deployment-guide.zh-CN.md)。
 
-本文只部署已发布的 Rust Gateway 0.1.0，不覆盖以下组件：
+本文不覆盖以下组件：
 
-- 当前仓库中的 Go Controller/PostgreSQL 摄取 WIP（见 [`controller/README.md`](../controller/README.md)）。
+- Go Controller/PostgreSQL 摄取（见[端到端部署指南](current-deployment-guide.zh-CN.md)）。
 - Redis Pub/Sub。
 - Vue 3 控制台。
 - IPAM、ACL 编译、SSO、SSH 或 RDP 功能。
@@ -18,6 +18,9 @@
 | 项目 | 当前状态 |
 | --- | --- |
 | 网关版本 | `0.1.0` |
+| 当前发布提交 | `654c70fbb70289c5313f7685abff72a59b3c9f7b` |
+| 当前固定镜像 | `ghcr.io/wuyouowo/nexustier:sha-654c70f` |
+| 当前镜像 digest | `sha256:fe7dbc15f1b96955fac429f3e3825c2f71f57aacbf4e415c2b4a8c7cbb4b7028` |
 | EasyTier 协议基线 | `v2.6.4` |
 | EasyTier commit | `8428a89d2dabc94c97d370ec607c6ca142473626` |
 | 原生验证环境 | Debian 13 x86-64，systemd 257 |
@@ -25,7 +28,7 @@
 | 原生 release 构建 | 已验证 |
 | HTTP 与优雅关闭烟测 | 已验证 |
 | Dockerfile | 已提供并完成静态审查 |
-| Docker 镜像实构 | 当前开发虚拟机没有 Docker CLI，尚未执行 |
+| Docker 镜像构建/推送/签名 | GitHub Actions Run `30518033355` 已验证 |
 | Kubernetes 与多副本 HA | 当前不支持 |
 
 原生构建得到的是动态链接 ELF。应在目标系统或不高于目标 glibc 版本的兼容构建环境中编译。不要把 Debian 13 上构建的二进制直接假定为兼容所有旧发行版。
@@ -35,7 +38,7 @@
 ```mermaid
 flowchart LR
     Client[EasyTier v2.6.4 客户端] -->|UDP 22020<br/>公网或专用网络| Gateway[NexusTier Gateway]
-    Operator[本机运维或未来 Go 控制器] -->|HTTP 11211<br/>仅回环或私网| Gateway
+    Operator[本机运维或当前 Go Controller] -->|HTTP 11211<br/>仅回环或私网| Gateway
     Client -. EasyTier Mesh 数据面 .-> Peers[其他 EasyTier 节点]
 ```
 
@@ -109,11 +112,13 @@ cargo --version
 ```bash
 git clone https://github.com/WuYouOwO/NexusTier.git
 cd NexusTier
+git checkout 654c70fbb70289c5313f7685abff72a59b3c9f7b
 git status --short
 git log -3 --oneline --decorate
 ```
 
-生产构建应使用经过审核的 commit，并保留其 SHA。不要在部署过程中自动跟随未知的远端最新提交。
+当前文档固定到 `654c70f`。生产构建应使用经过审核的 commit，并保留其 SHA；升级时
+显式替换为新的审核提交，不要在部署过程中自动跟随未知的远端最新提交。
 
 ### 5.3 执行质量检查
 
@@ -201,7 +206,6 @@ install -d -o root -g nexustier -m 0750 /etc/nexustier
 cat >/etc/nexustier/gateway.env <<'EOF'
 NEXUSTIER_GATEWAY_LISTEN_ADDR=0.0.0.0
 NEXUSTIER_GATEWAY_LISTEN_PORT=22020
-# 当前源码 WIP 推荐设置；已发布 0.1.0 镜像不识别该变量。
 NEXUSTIER_GATEWAY_ADMISSION_TOKEN=replace-with-a-random-bootstrap-token
 NEXUSTIER_GATEWAY_API_ADDR=127.0.0.1:11211
 NEXUSTIER_GATEWAY_RPC_TIMEOUT_MS=5000
@@ -214,7 +218,7 @@ chown root:nexustier /etc/nexustier/gateway.env
 chmod 0640 /etc/nexustier/gateway.env
 ```
 
-准入 Token 属于敏感启动凭据，必须限制环境文件读取权限，不得提交到仓库。它是 WIP 阶段的共享凭据，后续仍需由控制器提供可撤销的设备级凭据。
+准入 Token 属于敏感启动凭据，必须限制环境文件读取权限，不得提交到仓库。它是当前共享启动凭据，不是可撤销的设备级身份。
 
 ### 6.4 创建 systemd 单元
 
@@ -231,7 +235,7 @@ After=network-online.target
 Type=simple
 User=nexustier
 Group=nexustier
-EnvironmentFile=-/etc/nexustier/gateway.env
+EnvironmentFile=/etc/nexustier/gateway.env
 ExecStart=/usr/local/bin/nexustier-gateway
 Restart=on-failure
 RestartSec=3s
@@ -259,7 +263,10 @@ LimitNOFILE=65536
 WantedBy=multi-user.target
 ```
 
-`KillSignal=SIGINT` 是当前 `0.1.0` 的必要配置。省略它时，systemd 默认 SIGTERM 不会进入网关的 Ctrl+C 优雅关闭分支。
+环境文件是必需配置，不能添加忽略缺失的 `-` 前缀。当前 Token 配置在程序层仍是
+可选项，部署检查必须确认 `NEXUSTIER_GATEWAY_ADMISSION_TOKEN` 存在且非空；否则
+Gateway 会启动但不校验共享 Token。`KillSignal=SIGINT` 是当前 `0.1.0` 的必要配置。
+省略它时，systemd 默认 SIGTERM 不会进入网关的 Ctrl+C 优雅关闭分支。
 
 检查并启用服务：
 
@@ -328,7 +335,7 @@ ufw status verbose
 
 - 云安全组入站仅放行 UDP `22020`。
 - 有固定客户端出口 IP 时，优先限制源地址。
-- 客户端来源会漫游时，可开放更宽源范围；从当前源码部署时应同时配置共享准入 Token，已发布 0.1.0 镜像仍不具备该校验。
+- 客户端来源会漫游时，可开放更宽源范围，同时应配置随机共享准入 Token。
 - 网关位于 NAT 后时，将公网 UDP `22020` 映射到网关 UDP `22020`。
 - DNS A/AAAA 记录应指向实际可达地址。
 - 不要把 TCP `11211` 加入公网安全组。
@@ -346,14 +353,16 @@ EasyTier v2.6.4 已确认的参数为：
 udp://<网关主机或 IP>:22020/<非空 Token>
 ```
 
-已发布的 `0.1.0` 镜像不会验证 Token。从当前源码构建的 WIP 网关可通过 `NEXUSTIER_GATEWAY_ADMISSION_TOKEN` 校验共享 Token，但它仍不是零信任设备凭据。
+当前镜像可通过 `NEXUSTIER_GATEWAY_ADMISSION_TOKEN` 校验共享 Token，但它仍不是零信任设备凭据。
 
 ### 8.1 仅注册 Session
 
 ```bash
-easytier-core \
-  --config-server 'udp://gateway.example.com:22020/bootstrap' \
-  --machine-id '11111111-2222-3333-4444-555555555555'
+read -rsp 'Gateway admission token: ' GATEWAY_TOKEN && echo
+export ET_CONFIG_SERVER="udp://gateway.example.com:22020/${GATEWAY_TOKEN}"
+export ET_MACHINE_ID='11111111-2222-3333-4444-555555555555'
+unset GATEWAY_TOKEN
+easytier-core
 ```
 
 `--machine-id` 应为稳定 UUID。尤其在容器或频繁重装环境中，显式设置 Machine ID 可以避免每次启动被识别为新机器。
@@ -361,8 +370,7 @@ easytier-core \
 使用环境变量：
 
 ```bash
-export ET_CONFIG_SERVER='udp://gateway.example.com:22020/bootstrap'
-export ET_MACHINE_ID='11111111-2222-3333-4444-555555555555'
+test -n "${ET_CONFIG_SERVER:-}" && test -n "${ET_MACHINE_ID:-}"
 easytier-core
 ```
 
@@ -373,10 +381,11 @@ easytier-core
 若要看到 Node、Peer、Route 和 Stats，客户端需要已有本地配置：
 
 ```bash
-easytier-core \
-  --config-server 'udp://gateway.example.com:22020/bootstrap' \
-  --machine-id '11111111-2222-3333-4444-555555555555' \
-  --config-file /etc/easytier/node.toml
+read -rsp 'Gateway admission token: ' GATEWAY_TOKEN && echo
+export ET_CONFIG_SERVER="udp://gateway.example.com:22020/${GATEWAY_TOKEN}"
+export ET_MACHINE_ID='11111111-2222-3333-4444-555555555555'
+unset GATEWAY_TOKEN
+easytier-core --config-file /etc/easytier/node.toml
 ```
 
 网关将通过 WebClient 双向连接反向枚举该本地实例。数据面仍按 `/etc/easytier/node.toml` 中的 EasyTier 配置运行。
@@ -466,13 +475,25 @@ ghcr.io/wuyouowo/nexustier
 - 推送 `v*.*.*` 版本标签后发布语义版本、主次版本和提交 SHA 标签。
 - 也可以从 GitHub Actions 页面手动运行 `Build and publish container image`。
 - 发布镜像使用 GitHub OIDC 与 Cosign 进行无密钥签名。
-- 每次镜像构建前必须通过独立质量门禁：Rust 格式、锁定依赖测试、严格 Clippy 和 topology v1 契约资产检查。
+- 每次镜像构建前必须通过独立质量门禁：Rust 格式/测试/Clippy、Go test/vet、PostgreSQL 集成和 topology v1 契约资产检查。
 - Pull Request 工作流只拥有只读权限且不获取 OIDC Token；包写入和签名权限仅在非 PR 发布任务启用。
 
-拉取 GitHub 已发布镜像：
+拉取当前固定镜像：
 
 ```bash
-docker pull ghcr.io/wuyouowo/nexustier:latest
+docker pull ghcr.io/wuyouowo/nexustier:sha-654c70f
+docker pull \
+  ghcr.io/wuyouowo/nexustier@sha256:fe7dbc15f1b96955fac429f3e3825c2f71f57aacbf4e415c2b4a8c7cbb4b7028
+```
+
+安装 Cosign 后验证发布者身份：
+
+```bash
+cosign verify \
+  --certificate-identity \
+  'https://github.com/WuYouOwO/NexusTier/.github/workflows/docker-publish.yml@refs/heads/main' \
+  --certificate-oidc-issuer 'https://token.actions.githubusercontent.com' \
+  'ghcr.io/wuyouowo/nexustier@sha256:fe7dbc15f1b96955fac429f3e3825c2f71f57aacbf4e415c2b4a8c7cbb4b7028'
 ```
 
 ### 10.1 构建镜像
@@ -498,7 +519,7 @@ docker build \
 ### 10.2 运行容器
 
 ```bash
-docker run -d \
+sudo docker run -d \
   --name nexustier-gateway \
   --restart unless-stopped \
   --init \
@@ -506,12 +527,15 @@ docker run -d \
   --tmpfs /tmp:rw,noexec,nosuid,size=16m \
   --cap-drop ALL \
   --security-opt no-new-privileges:true \
+  --env-file /etc/nexustier/gateway.env \
   -p 22020:22020/udp \
   -p 127.0.0.1:11211:11211/tcp \
-  nexustier-gateway:0.1.0
+  ghcr.io/wuyouowo/nexustier@sha256:fe7dbc15f1b96955fac429f3e3825c2f71f57aacbf4e415c2b4a8c7cbb4b7028
 ```
 
 镜像内 API 绑定 `0.0.0.0:11211`，但端口发布只绑定宿主机 `127.0.0.1`。Dockerfile 声明 `STOPSIGNAL SIGINT`，`docker stop` 会进入网关优雅关闭流程。
+Docker CLI 必须能读取 `/etc/nexustier/gateway.env`；root-only 文件应使用
+`sudo docker run ...`，不要为方便而降低 Token 文件权限。
 
 ### 10.3 验证容器
 
@@ -568,11 +592,10 @@ journalctl -u nexustier-gateway.service --since '30 minutes ago' --no-pager
 
 ### 12.3 拓扑轮询
 
-`/v1/topology` 每次请求都会实时反向调用在线客户端，当前没有缓存或速率限制。运维脚本应：
+`/v1/topology` 使用单飞采集和短期 TTL 缓存：并发请求共享一轮 RPC，TTL 内复用同一 `collection_id`。运维脚本仍应：
 
 - 避免高频抓取。
-- 避免上一轮未完成时启动下一轮。
-- 建议从 10 至 30 秒的轮询间隔开始，再根据节点规模和延迟测量调整。
+- 使用 10 至 30 秒的轮询间隔起步，再根据节点规模、Controller 轮询和延迟调整。
 - 检查机器和实例级 `errors`，不要把部分失败误判为整次采集失败。
 
 ### 12.4 日志级别
@@ -653,7 +676,7 @@ curl --fail http://127.0.0.1:11211/healthz
 - systemd 清空 capabilities，启用只读系统保护。
 - Docker 使用非 root 用户、只读根文件系统、`cap-drop ALL` 和 `no-new-privileges`。
 - 不在仓库、镜像或环境文件中硬编码代理、私钥和未来数据库凭据。
-- 当前源码部署应配置随机共享准入 Token，但不能用它替代后续设备级身份认证；已发布 `0.1.0` 尚未实现该校验。
+- 当前部署应配置随机共享准入 Token，但不能用它替代后续设备级身份认证。
 - 定期审查 EasyTier 固定 revision，不静默切换上游分支。
 - 对外宣称能力时区分当前已实现网关与 README 路线图。
 
@@ -699,7 +722,9 @@ curl --fail http://127.0.0.1:11211/healthz
 ## 18. 相关文档
 
 - [中文文档索引](README.md)
-- [NexusTier Gateway 0.1.0 使用指南](usage-guide.zh-CN.md)
+- [当前版本端到端部署指南](current-deployment-guide.zh-CN.md)
+- [当前版本用户教程](current-usage-guide.zh-CN.md)
+- [Gateway 当前版本专项使用指南](usage-guide.zh-CN.md)
 - [Rust 网关使用与 API 手册](gateway-guide.zh-CN.md)
 - [Rust 网关源码架构解析](gateway-code.zh-CN.md)
 - [Go 控制器 WIP 运行说明](../controller/README.md)

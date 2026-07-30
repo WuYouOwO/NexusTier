@@ -11,10 +11,10 @@ This document is the engineering handoff for an AI agent or developer continuing
 - Gateway package: `nexustier-gateway 0.1.0`
 - Current workspace languages: Rust 2024 edition and Go 1.25
 - Declared Rust MSRV: `1.95`
-- Baseline HEAD for this handoff update: `77747e1`
-- Latest completed documentation milestone before this update: `77747e1`
+- Baseline HEAD for this handoff update: `654c70f`
+- Latest implemented telemetry-controller milestone: `654c70f`
 - First complete gateway milestone: `fbc1a9d`
-- Latest verified container workflow run: `30502517506` (successful)
+- Latest verified container workflow run: `30518033355` (successful)
 
 Always run `git status --short` and inspect the latest commits before editing. Other agents or the user may commit while work is in progress. Do not rewrite or revert changes you did not create.
 
@@ -134,7 +134,7 @@ The Go controller currently provides:
 
 The controller API is unauthenticated and loopback-only by default. It is an internal operational API, not the future public control-plane API.
 
-HTTP endpoints:
+Gateway HTTP endpoints:
 
 | Endpoint | Behavior |
 | --- | --- |
@@ -144,6 +144,14 @@ HTTP endpoints:
 | `GET /v1/topology` | Live reverse RPC collection by machine and instance |
 
 The HTTP API is intentionally unauthenticated and read-only. It must remain bound to loopback or a trusted private service network until the Go control plane provides an authenticated public API.
+
+Controller HTTP endpoints:
+
+| Endpoint | Behavior |
+| --- | --- |
+| `GET /healthz` | Controller process/HTTP health; does not require PostgreSQL |
+| `GET /readyz` | Returns `200` when PostgreSQL responds within one second, otherwise `503` |
+| `GET /v1/telemetry/status` | Polling attempt/success times, collection ID/state, last error, and consecutive failures |
 
 ## 6. Source Map
 
@@ -216,6 +224,10 @@ Read `docs/usage-guide.zh-CN.md` first for the current task-oriented user path a
 walkthrough is `docs/gateway-code.zh-CN.md`; the English operational guide is
 `crates/nexustier-gateway/README.md`.
 Read `controller/README.md` and `docs/controller-code.zh-CN.md` before changing controller persistence or polling semantics.
+
+For current operators and users, start with `docs/current-deployment-guide.zh-CN.md`
+and `docs/current-usage-guide.zh-CN.md`. The older deployment and usage guides are
+Gateway-only references.
 
 ## 7. Important Internal Contracts
 
@@ -399,16 +411,16 @@ The container publication path is operational and has been verified end to end:
 - Version tags matching `v*.*.*` publish semantic-version tags.
 - Published manifests are signed keylessly with Cosign through GitHub OIDC.
 - Anonymous GHCR manifest retrieval has been verified.
-- Container builds now depend on a read-only quality job; non-PR publication alone receives package write and OIDC signing permissions. This workflow change still requires its first hosted GitHub Actions run after merge.
+- Container builds depend on a read-only Rust/Go/PostgreSQL quality job; non-PR publication alone receives package write and OIDC signing permissions.
 
 The first fully successful publication after the build fixes was run
-`30452969418` for commit `fd554d8`. Run `30502517506` for documentation commit
-`77747e1` also completed successfully: build/push, Cosign signing, and summary
-publication all passed. At the time of this handoff update, `main`, `latest`, and
-`sha-77747e1` resolve to:
+`30452969418` for commit `fd554d8`. The current controller-foundation publication
+is run `30518033355` for commit `654c70f`; Rust/Go quality, PostgreSQL integration,
+build/push, Cosign signing, and summary publication all passed. The fixed tag is
+`sha-654c70f` and resolves to:
 
 ```text
-sha256:56249497aabc19760dc490c078aac622cac68fede5231fe41cd9734efb6dae48
+sha256:fe7dbc15f1b96955fac429f3e3825c2f71f57aacbf4e415c2b4a8c7cbb4b7028
 ```
 
 The Docker build failures and their fixes were:
@@ -442,6 +454,7 @@ Notable history:
 | `d2f326b` | Rust MSRV and Docker builder raised to 1.95 |
 | `fd554d8` | Standard Protobuf definitions added; first successful GHCR publication |
 | `77747e1` | Task-oriented Chinese usage guide and latest verified publication |
+| `654c70f` | Secure/bounded Gateway telemetry contract and Go/PostgreSQL controller foundation |
 
 Use `git log --oneline --decorate` for the handoff document's own commit and any newer work.
 
