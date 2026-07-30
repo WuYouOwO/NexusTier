@@ -1,17 +1,22 @@
-# NexusTier Controller 遥测摄取服务（WIP）
+# NexusTier Controller 遥测摄取服务
 
 `nexustier-controller` 是当前仓库中的 Go 控制面遥测摄取基础。它定时读取
 Rust Gateway 的 `nexustier.topology.v1` 契约，在一个 PostgreSQL 事务中
 更新当前拓扑、追加指标样本并记录采集错误。
 
-该模块通过 GitHub Actions 构建并发布 GHCR 镜像，但当前 API 仍只用于进程、
-数据库和摄取状态检查，不提供公开认证 API、Redis、WebSocket、IPAM 或 ACL。
+该模块通过 GitHub Actions 构建并发布 GHCR 镜像。它是内部遥测摄取服务，不是公开
+控制面 API：不提供机器/拓扑查询、认证、Redis、WebSocket、IPAM、ACL 或配置下发。
 
 完整安装 Gateway、Controller 和 PostgreSQL 请使用
 [当前版本端到端部署指南](../docs/current-deployment-guide.zh-CN.md)；接入节点、
 查看实时拓扑和持久化状态见[当前版本用户教程](../docs/current-usage-guide.zh-CN.md)。
 
-当前已验证源码提交为 `654c70fbb70289c5313f7685abff72a59b3c9f7b`。
+当前已验证镜像为：
+
+```text
+ghcr.io/wuyouowo/nexustier-controller:sha-44044b0
+sha256:876b4266f4ac70c6c33e0e9e7936b6d31968b8966a89c721c511d8e9f15e3838
+```
 
 ## 能力
 
@@ -45,7 +50,11 @@ Rust Gateway 的 `nexustier.topology.v1` 契约，在一个 PostgreSQL 事务中
 
 ## 运行
 
-先启动 PostgreSQL 和 Rust Gateway，然后在仓库根目录执行：
+推荐按[当前版本 Docker Compose 部署指南](../docs/current-deployment-guide.zh-CN.md)
+同时启动 PostgreSQL、Gateway 和 Controller。Compose 内 Controller 使用
+`postgres:5432` 和 `http://gateway:11211`，运维 API 只映射到宿主机回环地址。
+
+源码开发时，先启动 PostgreSQL 和 Rust Gateway，然后在仓库根目录执行：
 
 ```bash
 set -a
@@ -58,9 +67,9 @@ go -C controller run ./cmd/nexustier-controller
 访问策略，不要提交连接 URL 或密码。开发环境文件应放在仓库外并保持 `0600`；
 至少设置数据库 URL 和 Gateway URL。
 
-Controller 镜像发布到 `ghcr.io/wuyouowo/nexustier-controller`。仓库根目录的
-`compose.example.yaml` 可同时启动 PostgreSQL、Gateway 和 Controller；固定源码构建
-二进制并通过 systemd 运行的生产路径仍见端到端部署指南。
+容器默认使用 UID `10001` 的非 root 用户，内部监听 `0.0.0.0:8080`，并通过
+`/healthz` 执行 Docker 健康检查。镜像不包含数据库，启动时会连接外部 PostgreSQL
+并自动执行嵌入二进制的 checksummed migrations。
 
 ## API
 
@@ -70,7 +79,8 @@ Controller 镜像发布到 `ghcr.io/wuyouowo/nexustier-controller`。仓库根�
 | `GET /readyz` | PostgreSQL 在 1 秒内可响应时返回 `200` |
 | `GET /v1/telemetry/status` | 最近尝试、成功时间、collection ID、状态和连续失败数 |
 
-API 当前没有认证，默认只绑定回环地址。不得直接暴露到互联网。
+API 当前没有认证。原生运行默认绑定回环地址；容器内为了私有网络访问监听所有接口，
+Compose 仅映射到宿主机 `127.0.0.1:8080`。不得直接暴露到互联网。
 
 ## 数据模型
 
@@ -112,6 +122,7 @@ unset NEXUSTIER_TEST_DATABASE_URL TEST_DB_PASSWORD
 
 - 没有历史指标保留/分区策略，metric samples 会持续增长。
 - 没有面向控制台的机器、拓扑和时间序列查询 API。
+- 不创建或修改 EasyTier 网络实例，不执行 IPAM 或策略下发。
 - 没有设备级准入、OIDC、RBAC 或 API 认证。
 - 没有 Redis 发布、多控制器协调或高可用部署定义。
 - Compose 示例适合单机部署和验收，当前没有多控制器 HA 编排定义。

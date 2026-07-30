@@ -12,7 +12,7 @@ Chinese documentation: [full-stack deployment](../../docs/current-deployment-gui
 - Secure configuration tunnel: Noise handshake with AES-GCM
 - Session identity: EasyTier Machine ID
 
-The gateway uses EasyTier's native bidirectional RPC transport. It does not proxy data-plane packets and does not require TUN privileges.
+The gateway uses EasyTier's native bidirectional RPC transport. It does not create network instances, assign addresses, compile policies, or proxy data-plane packets, and it does not require TUN privileges.
 
 ## Run
 
@@ -38,7 +38,7 @@ Configure an EasyTier client to use the NexusTier endpoint as its config server.
 udp://<nexustier-host>:22020/<user-token>
 ```
 
-The token is carried by the EasyTier heartbeat but is intentionally never returned by the NexusTier read API. The current source can optionally require one shared admission token. This is a bootstrap control for the WIP controller foundation, not a replacement for future OIDC device enrollment and scoped credentials.
+The token is carried by the EasyTier heartbeat but is intentionally never returned by the NexusTier read API. The current source can optionally require one shared admission token. This is a bootstrap control, not device identity, tenant isolation, revocable credentials, or a replacement for future OIDC enrollment.
 
 ## Configuration
 
@@ -74,10 +74,11 @@ The current source emits the versioned `nexustier.topology.v1` contract with a c
 
 ## Container
 
-GitHub Actions builds pull requests without publishing. Pushes to `main`, semantic version tags such as `v0.1.0`, and manual workflow runs publish signed images to:
+GitHub Actions builds both application images for pull requests without publishing. Pushes to `main`, semantic version tags such as `v0.1.0`, and manual workflow runs publish signed images to:
 
 ```text
-ghcr.io/wuyouowo/nexustier
+Gateway:    ghcr.io/wuyouowo/nexustier
+Controller: ghcr.io/wuyouowo/nexustier-controller
 ```
 
 The `main` branch publishes `main`, `latest`, and `sha-<commit>` tags. Version tags publish the semantic version, major/minor, commit SHA, and the metadata action's release tags.
@@ -87,16 +88,16 @@ Every image build now depends on a separate quality job that runs locked tests, 
 Current verified image baseline:
 
 ```text
-ghcr.io/wuyouowo/nexustier:sha-654c70f
-sha256:fe7dbc15f1b96955fac429f3e3825c2f71f57aacbf4e415c2b4a8c7cbb4b7028
+ghcr.io/wuyouowo/nexustier:sha-44044b0
+sha256:acf3a2f1bdad378928addee3c040c0ca1de0516ddebf5d8217c16d648f90e417
 ```
 
-GitHub Actions run `30518033355` passed Rust, Go, PostgreSQL integration, image publication, Cosign signing, and summary steps.
+GitHub Actions run `30527587634` passed Rust, Go, PostgreSQL integration, both image publications, Cosign signing, and summary steps.
 
 Pull a published image:
 
 ```bash
-docker pull ghcr.io/wuyouowo/nexustier:sha-654c70f
+docker pull ghcr.io/wuyouowo/nexustier:sha-44044b0
 ```
 
 Build locally:
@@ -110,6 +111,15 @@ docker run --rm \
 ```
 
 The image runs as UID `10001` and requires no Linux capabilities. The container API binds to `0.0.0.0` internally so it can be published to loopback or reached by the Go controller on a private container network.
+
+## Current Boundaries
+
+- Sessions are in memory and are rebuilt when EasyTier clients reconnect.
+- The HTTP API is internal, read-only, and unauthenticated; it must stay on loopback or a trusted private network.
+- `/readyz` requires an active client, so `503` is expected before any client registers and must not be used as the container liveness probe.
+- The gateway reports live telemetry but does not persist it; persistence belongs to the Go controller and PostgreSQL.
+- There is no device-level identity, OIDC/RBAC, public management API, configuration distribution, IPAM, ACL engine, Redis synchronization, or multi-replica session HA.
+- Only EasyTier v2.6.4 at the pinned commit is a tested protocol baseline.
 
 ## Verification
 

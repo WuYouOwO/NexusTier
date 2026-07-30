@@ -1,7 +1,11 @@
 # NexusTier 内部 API 契约
 
-本目录保存跨语言控制面边界。Rust 网关是 topology v1 的生产者，当前 Go
-控制器 WIP 是严格消费者。
+本目录保存 NexusTier 内部跨语言遥测边界。Rust Gateway 是 topology v1 的生产者，
+Go Controller 是严格消费者。
+
+该契约描述 Gateway 到 Controller 的内部只读快照，不是面向最终用户的公开 API，
+也不包含认证、设备注册、IPAM、ACL、网络配置下发或 EasyTier 数据面协议。当前
+Controller 只消费并持久化该契约，不提供同结构的公开查询接口。
 
 部署和使用入口：
 
@@ -26,7 +30,16 @@
 - 顶层 `collection_timeout` 表示总期限到达；`machines` 仍包含期限前完成的结果。
 - 所有毫秒时间戳不得晚于 `9999-12-31T23:59:59.999Z`，以保持 Go/PostgreSQL 范围一致。
 - Peer ID 是网络实例作用域内的 `uint32`，不是全局设备 ID。
+- `errors` 表示采集结果的部分成功语义，不是命令执行或策略下发结果。
 
 Rust 生产者通过 `topology_v1_fixture_matches_the_producer_contract` 测试锁定
 fixture。Go 控制器通过 `TestClientDecodesSharedTopologyFixture` 使用同一
 fixture 锁定消费者解码，并拒绝未知字段。
+
+修改契约时必须在仓库根目录同时运行：
+
+```bash
+cargo test --locked --workspace
+go -C controller test ./internal/gatewayclient ./internal/ingest
+jq empty contracts/topology-v1.schema.json contracts/fixtures/topology-v1.json
+```

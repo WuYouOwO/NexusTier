@@ -8,11 +8,14 @@
 
 ---
 
-## 📖 项目简介 (Introduction)
+## 📖 项目定位 (Project Status)
 
-**NexusTier** 是一款专为 **EasyTier** 打造的、企业级零信任（ZTNA）SDN 控制器与 SD-WAN 编排系统。
+**NexusTier** 的目标是成为面向 **EasyTier** 的开源零信任 SDN 控制器与 SD-WAN
+编排系统。当前仓库交付的是第一阶段的**安全接入与遥测持久化底座**，不是完整的
+零信任或 SD-WAN 管理产品。
 
-传统的组网工具（如 Tailscale）高度依赖中心化协调器，在大规模、高并发的路由环境下极易遇到性能瓶颈。**NexusTier** 创造性地采用 **“控制面集中编排、数据面去中心化自律（Mesh）”** 的混合架构，将 EasyTier 强悍的打洞、抗丢包加速与加密能力释放到极致，为企业和极客提供一套完全自主可控、极佳 Vibe 交互的电信级组网解决方案。
+架构边界是“控制面集中编排，数据面由 EasyTier Mesh 自收敛”。NexusTier 不代理
+EasyTier 数据包，不替代 EasyTier 的 NAT 穿透、加密隧道、路由收敛和数据转发。
 
 ---
 
@@ -22,9 +25,18 @@
 *   **实时拓扑遥测**：反向采集 Node、Peer、Route、RTT、丢包、流量和 Stats，提供部分成功、结构化错误、单飞和有界采集。
 *   **版本化控制面契约**：Rust Gateway 生产 `nexustier.topology.v1`，Go Controller 严格校验并消费同一 Schema/fixture。
 *   **PostgreSQL 持久化**：幂等保存 Machine、Instance、Node、当前 Peer 链路、指标样本和采集错误，保护乱序和局部失败状态。
-*   **内部运维接口**：Gateway 和 Controller 提供回环/私网健康、就绪和摄取状态 API。
+*   **内部运维接口**：Gateway 提供会话和实时拓扑只读 API；Controller 提供健康、数据库就绪和摄取状态 API。
+*   **容器交付**：GitHub Actions 构建、签名并发布 Gateway 与 Controller 镜像；仓库提供 PostgreSQL 三服务 Compose 编排。
 
-当前没有 Web UI、OIDC/RBAC、IPAM、ACL、SSH/RDP 或 Redis。当前部署和操作见
+### 当前不提供
+
+*   Web UI、面向用户的公开 REST/WebSocket API 或 Controller 拓扑查询 API。
+*   OIDC、RBAC、设备级身份、租户隔离或 API 认证。
+*   IPAM、网络创建、配置下发、ACL/防火墙策略编译。
+*   SSH/RDP 准入、Redis 事件发布、多 Controller 协调或高可用编排。
+*   历史指标保留、分区和自动压缩策略。
+
+当前部署和操作见
 [端到端部署指南](docs/current-deployment-guide.zh-CN.md)与
 [用户教程](docs/current-usage-guide.zh-CN.md)。
 
@@ -48,36 +60,24 @@
 
 ---
 
-## 🏗️ 系统架构 (Architecture)
+## 🏗️ 当前架构 (Current Architecture)
 
-```text
-               +----------------------------------+
-               |      NexusTier 控制台 (Web UI)   |  <--- 极致交互与 Vibe
-               +----------------------------------+
-                                |
-               +----------------------------------+
-               |     SDN 控制中心 (Go / GoBGP)     |  <--- 静态配置与拓扑计算
-               +----------------------------------+
-                                |
-               +----------------------------------+
-               |     Rust 协议网关 / 翻译官       |  <--- Protobuf/WS 双向 RPC 中转
-               +----------------------------------+
-                                |
-                      (WSS / TCP / UDP 隧道)
-                                |
-               +----------------------------------+
-               |     客户端 Agent + EasyTier Core |  <--- 纯用户态 L3 转发与安全隧道
-               +----------------------------------+
+```mermaid
+flowchart LR
+    ET[未修改的 easytier-core] <-->|原生 WebClient 协议<br/>UDP 22020| GW[Rust Gateway]
+    GW -->|私有只读 API<br/>HTTP 11211| CTRL[Go Controller]
+    CTRL -->|TCP 5432| PG[(PostgreSQL)]
+    OPS[运维人员] -->|回环地址<br/>HTTP 11211/8080| INTERNAL[内部状态 API]
+    ET -. 加密 Mesh 数据面 .-> PEERS[其他 EasyTier Peer]
 ```
 
 ---
 
 ## 🛠️ 技术栈 (Tech Stack)
 
-*   **控制面核心 (Control Plane)**: Go / `net/http` / pgx / PostgreSQL；后续 GoBGP / Redis
+*   **控制面遥测摄取 (Control Plane)**: Go / `net/http` / pgx / PostgreSQL
 *   **协议转换层 (Protocol Gateway)**: Rust / Tokio / Protobuf
-*   **客户端代理 (Agent & GUI)**: Rust / Go / Tauri / TypeScript
-*   **前端大屏 (Frontend Panel)**: Vue 3 / React / Vite / Tailwind CSS / ECharts GL
+*   **客户端与数据面 (External)**: 未修改的 EasyTier v2.6.4；仓库当前不包含 NexusTier Agent
 
 ---
 
@@ -88,13 +88,13 @@
 *   兼容 EasyTier `v2.6.4` 原生 UDP WebClient 协议，默认监听 `22020/UDP`。
 *   支持 Noise + AES-GCM 安全配置通道，不修改 `easytier-core` 客户端代码。
 *   使用 Machine ID 维护并发内存 Session Pool，安全处理断线、重连与连接替换。
-*   当前源码 WIP 只允许 Noise + AES-GCM 安全重连注册，可选校验共享准入 Token，并禁止会话内切换 Machine ID。
+*   只允许 Noise + AES-GCM 安全重连注册，可选校验共享准入 Token，并禁止会话内切换 Machine ID。
 *   通过原生双向 RPC 反向采集 Node、Peer、Route、RTT、流量和 Stats 指标。
-*   当前源码 WIP 提供 `nexustier.topology.v1` JSON Schema、固定跨语言 fixture、采集 ID、分层观测时间和结构化局部错误。
+*   提供 `nexustier.topology.v1` JSON Schema、固定跨语言 fixture、采集 ID、分层观测时间和结构化局部错误。
 *   在 `127.0.0.1:11211` 暴露只读 `/healthz`、`/readyz`、`/v1/sessions` 和 `/v1/topology` API。
 *   提供非 root 多阶段容器镜像，不需要 TUN 权限或额外 Linux capabilities。
 
-Go 控制器遥测摄取基础当前可作为 WIP 完整栈运行：
+Go 控制器遥测摄取基础可作为完整遥测链路运行：
 
 *   严格消费共享的 `nexustier.topology.v1` 契约。
 *   提供 PostgreSQL migrations 与 Machine、Instance、Node、Peer、Metric、Error 规范化模型。
@@ -102,11 +102,16 @@ Go 控制器遥测摄取基础当前可作为 WIP 完整栈运行：
 *   使用超时、抖动和禁止重叠的轮询 worker，并暴露内部健康、就绪与摄取状态 API。
 *   已通过 PostgreSQL 18 集成测试和进程级 Gateway fixture 联调；Gateway 与 Controller 均由 GitHub Actions 构建并发布到 GHCR。
 
-当前已验证发布基线：
+当前已验证应用镜像基线：
 
-*   源码：`654c70fbb70289c5313f7685abff72a59b3c9f7b`。
-*   Gateway 镜像：`ghcr.io/wuyouowo/nexustier:sha-654c70f`。
-*   镜像 digest：`sha256:fe7dbc15f1b96955fac429f3e3825c2f71f57aacbf4e415c2b4a8c7cbb4b7028`。
+| 组件 | 镜像 | Digest |
+| --- | --- | --- |
+| Gateway | `ghcr.io/wuyouowo/nexustier:sha-44044b0` | `sha256:acf3a2f1bdad378928addee3c040c0ca1de0516ddebf5d8217c16d648f90e417` |
+| Controller | `ghcr.io/wuyouowo/nexustier-controller:sha-44044b0` | `sha256:876b4266f4ac70c6c33e0e9e7936b6d31968b8966a89c721c511d8e9f15e3838` |
+
+该基线对应提交 `44044b026f759331bb354b7af3b4390227085a58` 和成功的 GitHub
+Actions Run `30527587634`。两个镜像均为 `linux/amd64` OCI image index，并使用
+GitHub OIDC + Cosign 签名。
 
 开发运行：
 
@@ -126,16 +131,16 @@ go -C controller run ./cmd/nexustier-controller
 该文件至少包含 `NEXUSTIER_CONTROLLER_DATABASE_URL`，应位于仓库外并保持 `0600`。
 完整配置见端到端部署指南。
 
-容器编排示例会启动 PostgreSQL、Gateway 与 Controller。先修改示范变量中的密码和准入 Token：
+推荐使用 Compose 部署 PostgreSQL、Gateway 与 Controller。安全变量生成、固定镜像、
+签名验证、备份和升级步骤见[当前版本 Docker Compose 部署指南](docs/current-deployment-guide.zh-CN.md)：
 
 ```bash
-cp .env.example .env
-docker compose -f compose.example.yaml pull
-docker compose -f compose.example.yaml up -d
+docker compose --env-file .env -f compose.example.yaml config --quiet
+docker compose --env-file .env -f compose.example.yaml up -d
 ```
 
-默认镜像分别为 `ghcr.io/wuyouowo/nexustier:latest` 与
-`ghcr.io/wuyouowo/nexustier-controller:latest`。发布版本时，建议在 `.env` 中将两者固定为相同的版本标签；Gateway UDP 端口公开，两个 HTTP 运维 API 仅绑定宿主机回环地址。
+生产部署应将两个应用镜像固定到相同的 SHA 版本或审核过的 digest。Gateway UDP 端口
+对客户端开放，两个 HTTP 运维 API 默认仅绑定宿主机回环地址，PostgreSQL 不发布端口。
 
 中文文档：
 
@@ -146,7 +151,7 @@ docker compose -f compose.example.yaml up -d
 *   [Gateway 专项生产部署指南](docs/deployment-guide.zh-CN.md)
 *   [Rust 网关使用与部署手册](docs/gateway-guide.zh-CN.md)
 *   [Rust 网关源码架构解析](docs/gateway-code.zh-CN.md)
-*   [Go 控制器 WIP 运行说明](controller/README.md)
+*   [Go 控制器运行与边界说明](controller/README.md)
 *   [Go 控制器源码架构解析](docs/controller-code.zh-CN.md)
 *   [AI Agent Engineering Handoff (English)](docs/AGENT_HANDOFF.md)
 *   [遥测摄取基础开发计划（已完成）](docs/development-plan.zh-CN.md)
@@ -157,7 +162,8 @@ docker compose -f compose.example.yaml up -d
 
 ## 📅 路线图 (Roadmap)
 
-*   [ ] **Phase 1**: 基于原生 EasyTier 核心的双向 RPC 通信对接，打通全球拓扑大屏与配置下发。 (WIP)
+*   [x] **Phase 1A**: 原生 EasyTier 安全接入、双向遥测 RPC、版本化契约和 PostgreSQL 摄取底座。
+*   [ ] **Phase 1B**: 面向用户的只读拓扑 API、历史指标保留策略和 Web 拓扑控制台。
 *   [ ] **Phase 2**: 实现分布式 IPAM（IP 地址管理）与声明式有状态 ACL 防火墙。
 *   [ ] **Phase 3**: 推出 NexusTier 多端 GUI Agent，支持企业级 SSO 扫码入网。
 *   [ ] **Phase 4**: 实现零信任安全 SSH 终端与基于虚拟智能卡重定向的免密 RDP 连接。
