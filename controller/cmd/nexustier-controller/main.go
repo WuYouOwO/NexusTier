@@ -16,6 +16,8 @@ import (
 	"github.com/WuYouOwO/NexusTier/controller/internal/gatewayclient"
 	"github.com/WuYouOwO/NexusTier/controller/internal/ingest"
 	"github.com/WuYouOwO/NexusTier/controller/internal/poller"
+	"github.com/WuYouOwO/NexusTier/controller/internal/readmodel"
+	"github.com/WuYouOwO/NexusTier/controller/internal/retention"
 )
 
 func main() {
@@ -58,10 +60,22 @@ func run(logger *slog.Logger) error {
 		defer close(workerDone)
 		worker.Run(ctx)
 	}()
+	retentionCleaner := retention.New(
+		retention.NewPostgreSQLStore(pool),
+		logger,
+		settings.MetricRetention,
+		settings.CleanupInterval,
+		settings.CleanupBatchSize,
+	)
+	retentionDone := make(chan struct{})
+	go func() {
+		defer close(retentionDone)
+		retentionCleaner.Run(ctx)
+	}()
 
 	server := &http.Server{
 		Addr:              settings.ListenAddress,
-		Handler:           api.New(pool, worker),
+		Handler:           api.New(pool, readmodel.NewStore(pool), worker, retentionCleaner),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       10 * time.Second,
 		WriteTimeout:      10 * time.Second,
@@ -89,6 +103,13 @@ func run(logger *slog.Logger) error {
 	}
 	select {
 	case <-workerDone:
+	case <-shutdownCtx.Done():
+		if serveError == nil {
+			serveError = shutdownCtx.Err()
+		}
+	}
+	select {
+	case <-retentionDone:
 	case <-shutdownCtx.Done():
 		if serveError == nil {
 			serveError = shutdownCtx.Err()

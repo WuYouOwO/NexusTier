@@ -56,6 +56,26 @@ func TestStoreRejectsCollectionIDReuseWithDifferentPayload(t *testing.T) {
 	}
 }
 
+func TestStoreRecognizesDuplicateAfterRawPayloadPruning(t *testing.T) {
+	ctx, pool := testDatabase(t)
+	store := ingest.NewStore(pool)
+	snapshot := fixtureSnapshot(t)
+	if inserted, err := store.Ingest(ctx, snapshot); err != nil || !inserted {
+		t.Fatalf("first ingestion: inserted=%v err=%v", inserted, err)
+	}
+	if _, err := pool.Exec(ctx, `
+		UPDATE telemetry_collection_runs
+		SET raw_payload = 'null'::jsonb, payload_pruned_at = now()
+		WHERE collection_id = $1`, snapshot.CollectionID); err != nil {
+		t.Fatalf("prune raw payload: %v", err)
+	}
+
+	inserted, err := store.Ingest(ctx, snapshot)
+	if err != nil || inserted {
+		t.Fatalf("duplicate ingestion after pruning: inserted=%v err=%v", inserted, err)
+	}
+}
+
 func TestOlderSnapshotCannotDeleteNewerPeer(t *testing.T) {
 	ctx, pool := testDatabase(t)
 	store := ingest.NewStore(pool)

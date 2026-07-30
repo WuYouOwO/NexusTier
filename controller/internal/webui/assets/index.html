@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>NexusTier Topology</title>
+  <link rel="stylesheet" href="/assets/styles.css">
+</head>
+<body>
+  <header class="app-header">
+    <div class="brand-block">
+      <p class="eyebrow">NEXUSTIER CONTROL PLANE</p>
+      <h1>Network topology</h1>
+    </div>
+    <div class="header-status">
+      <span class="status-dot" id="status-dot" aria-hidden="true"></span>
+      <span id="connection-label">Connecting</span>
+      <time id="updated-at">Not updated</time>
+    </div>
+  </header>
+
+  <main>
+    <section class="toolbar" aria-label="Topology controls">
+      <label class="field search-field">
+        <span>Filter</span>
+        <input id="search" type="search" placeholder="Hostname, machine, instance, IP" autocomplete="off">
+      </label>
+      <label class="field">
+        <span>State</span>
+        <select id="active-filter">
+          <option value="true">Active</option>
+          <option value="">All</option>
+          <option value="false">Inactive</option>
+        </select>
+      </label>
+      <label class="field">
+        <span>Refresh</span>
+        <select id="refresh-interval">
+          <option value="5000">5 seconds</option>
+          <option value="15000" selected>15 seconds</option>
+          <option value="30000">30 seconds</option>
+          <option value="0">Manual</option>
+        </select>
+      </label>
+      <button id="refresh-button" type="button">Refresh now</button>
+    </section>
+
+    <section class="summary-grid" aria-label="Topology summary">
+      <article class="summary-cell">
+        <span>Machines</span>
+        <strong id="machine-count">0</strong>
+        <small id="machine-detail">0 inactive</small>
+      </article>
+      <article class="summary-cell">
+        <span>Instances</span>
+        <strong id="instance-count">0</strong>
+        <small id="instance-detail">0 with node data</small>
+      </article>
+      <article class="summary-cell">
+        <span>Peer routes</span>
+        <strong id="peer-count">0</strong>
+        <small id="peer-detail">0 direct</small>
+      </article>
+      <article class="summary-cell freshness-cell">
+        <span>Collection freshness</span>
+        <strong id="freshness">No data</strong>
+        <small id="collection-detail">Waiting for collection</small>
+      </article>
+    </section>
+
+    <section class="workspace">
+      <div class="topology-panel">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">LIVE CONTROL VIEW</p>
+            <h2>Connectivity map</h2>
+          </div>
+          <div class="legend" aria-label="Topology legend">
+            <span><i class="legend-node machine-node"></i>Machine</span>
+            <span><i class="legend-node peer-node"></i>Peer</span>
+            <span><i class="legend-line direct-line"></i>Direct</span>
+            <span><i class="legend-line relayed-line"></i>Relayed</span>
+          </div>
+        </div>
+        <div class="canvas-wrap" id="canvas-wrap">
+          <svg id="topology-canvas" role="img" aria-label="Live NexusTier topology"></svg>
+          <div class="empty-state" id="empty-state" hidden>
+            <strong>No topology matches this view</strong>
+            <span>Connect an EasyTier client or change the filters.</span>
+          </div>
+        </div>
+      </div>
+
+      <aside class="details-panel" aria-live="polite">
+        <div class="section-heading compact-heading">
+          <div>
+            <p class="eyebrow">SELECTION</p>
+            <h2 id="details-title">Nothing selected</h2>
+          </div>
+        </div>
+        <div id="details-content" class="details-content">
+          <p>Select a machine or peer in the map to inspect current state.</p>
+        </div>
+      </aside>
+    </section>
+
+    <section class="inventory-section">
+      <div class="section-heading">
+        <div>
+          <p class="eyebrow">PERSISTED CURRENT STATE</p>
+          <h2>Machine inventory</h2>
+        </div>
+        <span id="result-count">0 results</span>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Machine</th>
+              <th>State</th>
+              <th>Instances</th>
+              <th>Peers</th>
+              <th>Last observed</th>
+              <th>Version</th>
+            </tr>
+          </thead>
+          <tbody id="machine-table"></tbody>
+        </table>
+      </div>
+      <button id="load-more" class="load-more" type="button" hidden>Load more machines</button>
+    </section>
+  </main>
+
+  <div class="toast" id="toast" role="status" hidden></div>
+  <script src="/assets/app.js" defer></script>
+</body>
+</html>

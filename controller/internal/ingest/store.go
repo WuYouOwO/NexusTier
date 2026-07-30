@@ -29,6 +29,7 @@ func (store *Store) Ingest(ctx context.Context, snapshot gatewayclient.Snapshot)
 	if err != nil {
 		return false, fmt.Errorf("encode raw topology snapshot: %w", err)
 	}
+	rawPayloadSHA256 := fmt.Sprintf("%x", sha256.Sum256(rawPayload))
 	errorCount := countErrors(snapshot)
 	status := "complete"
 	if errorCount > 0 {
@@ -43,8 +44,8 @@ func (store *Store) Ingest(ctx context.Context, snapshot gatewayclient.Snapshot)
 	result, err := tx.Exec(ctx, `
 		INSERT INTO telemetry_collection_runs (
 			collection_id, schema_version, started_at, completed_at, collected_at,
-			status, machine_count, error_count, raw_payload
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+			status, machine_count, error_count, raw_payload, raw_payload_sha256
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
 		ON CONFLICT (collection_id) DO NOTHING`,
 		snapshot.CollectionID,
 		snapshot.SchemaVersion,
@@ -55,6 +56,7 @@ func (store *Store) Ingest(ctx context.Context, snapshot gatewayclient.Snapshot)
 		len(snapshot.Machines),
 		errorCount,
 		rawPayload,
+		rawPayloadSHA256,
 	)
 	if err != nil {
 		return false, fmt.Errorf("insert collection run: %w", err)
@@ -62,10 +64,14 @@ func (store *Store) Ingest(ctx context.Context, snapshot gatewayclient.Snapshot)
 	if result.RowsAffected() == 0 {
 		var matches bool
 		if err := tx.QueryRow(ctx, `
-			SELECT raw_payload = $2::jsonb
+			SELECT CASE
+				WHEN raw_payload_sha256 IS NOT NULL THEN raw_payload_sha256 = $2
+				ELSE raw_payload = $3::jsonb
+			END
 			FROM telemetry_collection_runs
 			WHERE collection_id = $1`,
 			snapshot.CollectionID,
+			rawPayloadSHA256,
 			rawPayload,
 		).Scan(&matches); err != nil {
 			return false, fmt.Errorf("verify duplicate collection: %w", err)
