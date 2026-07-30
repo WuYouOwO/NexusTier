@@ -38,7 +38,7 @@ Configure an EasyTier client to use the NexusTier endpoint as its config server.
 udp://<nexustier-host>:22020/<user-token>
 ```
 
-The token is carried by the EasyTier heartbeat but is intentionally never returned by the NexusTier read API.
+The token is carried by the EasyTier heartbeat but is intentionally never returned by the NexusTier read API. The current source can optionally require one shared admission token. This is a bootstrap control for the WIP controller foundation, not a replacement for future OIDC device enrollment and scoped credentials.
 
 ## Configuration
 
@@ -46,10 +46,16 @@ The token is carried by the EasyTier heartbeat but is intentionally never return
 | --- | --- | --- |
 | `--listen-addr` | `NEXUSTIER_GATEWAY_LISTEN_ADDR` | `0.0.0.0` |
 | `--listen-port` | `NEXUSTIER_GATEWAY_LISTEN_PORT` | `22020` |
+| `--admission-token` | `NEXUSTIER_GATEWAY_ADMISSION_TOKEN` | unset |
 | `--api-addr` | `NEXUSTIER_GATEWAY_API_ADDR` | `127.0.0.1:11211` |
 | `--rpc-timeout-ms` | `NEXUSTIER_GATEWAY_RPC_TIMEOUT_MS` | `5000` |
+| `--collection-timeout-ms` | `NEXUSTIER_GATEWAY_COLLECTION_TIMEOUT_MS` | `15000` |
+| `--machine-concurrency` | `NEXUSTIER_GATEWAY_MACHINE_CONCURRENCY` | `8` |
+| `--snapshot-ttl-ms` | `NEXUSTIER_GATEWAY_SNAPSHOT_TTL_MS` | `1000` |
 
 Use `RUST_LOG` to configure logging, for example `RUST_LOG=nexustier_gateway=debug`.
+
+Plaintext connections remain available only for the native EasyTier feature probe. A session must reconnect with Noise + AES-GCM before heartbeat registration. When `--admission-token` is configured, every heartbeat must carry that exact token. The Machine ID accepted by the first heartbeat is immutable for the lifetime of the connection.
 
 ## HTTP API
 
@@ -62,6 +68,10 @@ The API is read-only and has no public authentication layer. Keep it on loopback
 
 Telemetry collection uses independent RPC deadlines. A failed instance call is reported in that instance's `errors` array while other machines and instances remain available.
 
+Topology collection is single-flight. Concurrent requests wait for the same collection, and requests within the snapshot TTL reuse its `collection_id`. Each collection also has an overall deadline and a bounded number of concurrently collected machines. A deadline returns completed machines plus a snapshot-level `collection_timeout` error instead of waiting without bound.
+
+The current source emits the versioned `nexustier.topology.v1` contract with a collection UUID, collection start/completion timestamps, machine/instance observation timestamps, and machine-readable error codes. The JSON Schema and shared fixture live under [`contracts`](../../contracts/README.md).
+
 ## Container
 
 GitHub Actions builds pull requests without publishing. Pushes to `main`, semantic version tags such as `v0.1.0`, and manual workflow runs publish signed images to:
@@ -71,6 +81,8 @@ ghcr.io/wuyouowo/nexustier
 ```
 
 The `main` branch publishes `main`, `latest`, and `sha-<commit>` tags. Version tags publish the semantic version, major/minor, commit SHA, and the metadata action's release tags.
+
+Every image build now depends on a separate quality job that runs locked tests, strict Clippy, rustfmt, and topology contract asset checks. Pull requests receive read-only repository/package permissions and no OIDC token; publishing and signing permissions are enabled only for non-PR builds.
 
 Pull a published image:
 
@@ -98,4 +110,4 @@ cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
 ```
 
-The integration suite starts EasyTier's real v2.6.4 `WebClient` and a no-TUN network instance, then verifies secure registration and reverse `show_node_info`, `list_peer`, `list_route`, and `get_stats` RPC calls.
+The integration suite starts EasyTier's real v2.6.4 `WebClient` and a no-TUN network instance, then verifies secure registration and reverse `show_node_info`, `list_peer`, `list_route`, and `get_stats` RPC calls. Focused tests also reject plaintext heartbeat registration, invalid admission tokens, and Machine ID changes within an established session.

@@ -54,9 +54,13 @@ mod tests {
         let machine_id = uuid::Uuid::new_v4();
         let old_session = Arc::new(GatewaySession::new(
             "udp://127.0.0.1:10001".parse().unwrap(),
+            true,
+            None,
         ));
         let new_session = Arc::new(GatewaySession::new(
             "udp://127.0.0.1:10002".parse().unwrap(),
+            true,
+            None,
         ));
 
         assert!(pool.insert(machine_id, old_session.clone()).is_none());

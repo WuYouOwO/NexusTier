@@ -24,10 +24,13 @@ async fn main() -> anyhow::Result<()> {
     let listen_url = format!("udp://{}:{}", config.listen_addr, config.listen_port)
         .parse()
         .map_err(|error| anyhow::anyhow!("invalid gateway listen URL: {error}"))?;
-    let gateway = Gateway::new(listen_url);
+    let gateway = Gateway::new(listen_url, config.admission_token.clone());
     let api_state = api::ApiState::new(
         gateway.session_pool(),
         std::time::Duration::from_millis(config.rpc_timeout_ms),
+        std::time::Duration::from_millis(config.collection_timeout_ms.get()),
+        config.machine_concurrency.get(),
+        std::time::Duration::from_millis(config.snapshot_ttl_ms.get()),
     );
     let (shutdown_tx, shutdown_rx) = watch::channel(false);
     let mut gateway_task = tokio::spawn(gateway.serve(shutdown_rx.clone()));

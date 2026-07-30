@@ -45,7 +45,7 @@ sequenceDiagram
     API-->>GO: JSON
 ```
 
-客户端首次连接用于能力探测。双方支持安全通道时，客户端会关闭探测连接并以 Noise + AES-GCM 重连。网关会快速回收未发送心跳的探测会话，不会把它加入 Session Pool。
+客户端首次连接用于能力探测。双方支持安全通道时，客户端会关闭探测连接并以 Noise + AES-GCM 重连。明文连接只能调用能力探测，发送心跳会被拒绝；只有安全重连可以加入 Session Pool。
 
 ## 3. 环境要求
 
@@ -87,7 +87,7 @@ EasyTier 配置服务器端点格式：
 udp://<NexusTier 网关地址>:22020/<用户令牌>
 ```
 
-具体配置服务器 CLI 参数以所使用的 EasyTier v2.6.4 客户端发行版为准。用户令牌会随 EasyTier 心跳进入网关，但不会出现在 `/v1/sessions` 或 `/v1/topology` 响应中。
+具体配置服务器 CLI 参数以所使用的 EasyTier v2.6.4 客户端发行版为准。用户令牌会随 EasyTier 心跳进入网关，但不会出现在 `/v1/sessions` 或 `/v1/topology` 响应中。当前源码可以通过 `--admission-token` 要求所有客户端使用同一个共享准入 Token；未配置时只强制安全通道，不校验 Token 内容。
 
 ## 5. 配置项
 
@@ -95,8 +95,12 @@ udp://<NexusTier 网关地址>:22020/<用户令牌>
 | --- | --- | --- | --- |
 | `--listen-addr` | `NEXUSTIER_GATEWAY_LISTEN_ADDR` | `0.0.0.0` | EasyTier UDP 监听地址 |
 | `--listen-port` | `NEXUSTIER_GATEWAY_LISTEN_PORT` | `22020` | EasyTier UDP 监听端口 |
+| `--admission-token` | `NEXUSTIER_GATEWAY_ADMISSION_TOKEN` | 未设置 | 可选的共享心跳准入 Token |
 | `--api-addr` | `NEXUSTIER_GATEWAY_API_ADDR` | `127.0.0.1:11211` | Go 控制器调用的 HTTP 地址 |
 | `--rpc-timeout-ms` | `NEXUSTIER_GATEWAY_RPC_TIMEOUT_MS` | `5000` | 每次反向 RPC 的独立超时 |
+| `--collection-timeout-ms` | `NEXUSTIER_GATEWAY_COLLECTION_TIMEOUT_MS` | `15000` | 一次完整拓扑采集的总期限 |
+| `--machine-concurrency` | `NEXUSTIER_GATEWAY_MACHINE_CONCURRENCY` | `8` | 同时采集的最大机器数，必须大于 0 |
+| `--snapshot-ttl-ms` | `NEXUSTIER_GATEWAY_SNAPSHOT_TTL_MS` | `1000` | 已完成拓扑快照的复用时间，必须大于 0 |
 
 日志通过 `RUST_LOG` 配置：
 
@@ -177,6 +181,10 @@ API 当前无认证层，只允许部署在回环地址或可信私有网络。�
 
 ```json
 {
+  "schema_version": "nexustier.topology.v1",
+  "collection_id": "11111111-1111-4111-8111-111111111111",
+  "started_at_ms": 1785319201000,
+  "completed_at_ms": 1785319202000,
   "collected_at_ms": 1785319202000,
   "machines": [
     {
@@ -193,9 +201,11 @@ API 当前无认证层，只允许部署在回环地址或可信私有网络。�
         ],
         "device": null
       },
+      "observed_at_ms": 1785319202000,
       "instances": [
         {
           "instance_id": "ac91282a-27b9-4cb7-a42f-d984663eb157",
+          "observed_at_ms": 1785319201900,
           "node": {
             "peer_id": 1001,
             "ipv4": "10.10.0.1/24",
@@ -232,19 +242,28 @@ API 当前无认证层，只允许部署在回环地址或可信私有网络。�
       ],
       "errors": []
     }
-  ]
+  ],
+  "errors": []
 }
 ```
 
 字段语义：
 
+- `schema_version`：固定的跨语言契约版本，当前为 `nexustier.topology.v1`。
+- `collection_id`：一次实际反向采集的 UUID；缓存命中时保持不变。
+- `started_at_ms`、`completed_at_ms`：整次采集的开始和完成时间。
+- `observed_at_ms`：当前 Machine 或 Instance 完成本轮观测的时间。
 - `direct=true`：目标 Peer 为一跳直连，`latency_ms` 来自默认连接或最小时延连接的统计。
 - `direct=false`：目标 Peer 经过中继，`latency_ms` 使用 EasyTier Route 的路径延迟。
 - `path_cost`：EasyTier 路由代价；直连通常为 `1`。
 - `next_hop_peer_id`：到目标 Peer 的下一跳。
 - `loss_rate`：`0.01` 表示约 1% 丢包率。
 - `rx_bytes`、`tx_bytes`：当前 Peer 所有连接的累计字节数。
-- `errors`：当前机器或实例的局部采集错误，不代表整份快照失败。
+- `errors`：可出现在快照、机器或实例层；`code` 用于程序判断，`operation` 和 `message` 用于定位，不代表整份快照必然失败。
+
+并发调用 `/v1/topology` 不会启动多轮反向 RPC：请求会等待同一个进行中的采集。采集完成后的 TTL 内继续返回同一份快照和 `collection_id`。总期限到达时返回已经完成的机器，并在快照级 `errors` 中写入 `collection_timeout`。
+
+完整机器可读定义和固定样例见 [`contracts`](../contracts/README.md)。
 
 ### 6.5 统一错误格式
 
@@ -311,7 +330,8 @@ CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 \
 ## 9. 安全说明
 
 - HTTP API 不得直接暴露到互联网。
-- Machine ID 是会话身份，不是用户授权凭据；未来准入授权由 Go 控制器负责。
+- 首个安全心跳固定当前连接的 Machine ID，后续心跳不能切换身份。
+- 可选共享 Token 只适合作为 WIP 阶段的启动准入控制；完整设备授权仍由后续 Go 控制器和 OIDC 入网流程负责。
 - 网关响应不返回心跳中的用户令牌。
 - 安全配置通道保护 EasyTier WebClient RPC 连接，但不替代 Go API 的网络隔离。
 - EasyTier 数据面使用自己的加密与路由机制，网关不接触业务数据包。

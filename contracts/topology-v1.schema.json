@@ -1,0 +1,189 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://nexustier.dev/contracts/topology-v1.schema.json",
+  "title": "NexusTier Topology Snapshot v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "collection_id",
+    "started_at_ms",
+    "completed_at_ms",
+    "collected_at_ms",
+    "machines",
+    "errors"
+  ],
+  "properties": {
+    "schema_version": { "const": "nexustier.topology.v1" },
+    "collection_id": { "$ref": "#/$defs/uuid" },
+    "started_at_ms": { "$ref": "#/$defs/timestampMs" },
+    "completed_at_ms": { "$ref": "#/$defs/timestampMs" },
+    "collected_at_ms": { "$ref": "#/$defs/timestampMs" },
+    "machines": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/machine" }
+    },
+    "errors": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/error" }
+    }
+  },
+  "$defs": {
+    "uuid": {
+      "type": "string",
+      "format": "uuid",
+      "not": { "const": "00000000-0000-0000-0000-000000000000" }
+    },
+    "timestampMs": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 253402300799999
+    },
+    "error": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code", "operation", "message"],
+      "properties": {
+        "code": {
+          "type": "string",
+          "enum": ["session_unavailable", "rpc_error", "rpc_timeout", "task_failed", "collection_timeout"]
+        },
+        "operation": { "type": "string", "minLength": 1 },
+        "message": { "type": "string" }
+      }
+    },
+    "device": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["os_type", "os_version", "distribution"],
+      "properties": {
+        "os_type": { "type": "string" },
+        "os_version": { "type": "string" },
+        "distribution": { "type": "string" }
+      }
+    },
+    "session": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "machine_id",
+        "remote_url",
+        "hostname",
+        "easytier_version",
+        "report_time",
+        "connected_at_ms",
+        "last_heartbeat_at_ms",
+        "running_instance_ids",
+        "device"
+      ],
+      "properties": {
+        "machine_id": { "$ref": "#/$defs/uuid" },
+        "remote_url": { "type": "string", "minLength": 1 },
+        "hostname": { "type": "string" },
+        "easytier_version": { "type": "string" },
+        "report_time": { "type": "string" },
+        "connected_at_ms": { "$ref": "#/$defs/timestampMs" },
+        "last_heartbeat_at_ms": { "$ref": "#/$defs/timestampMs" },
+        "running_instance_ids": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/uuid" }
+        },
+        "device": {
+          "oneOf": [
+            { "$ref": "#/$defs/device" },
+            { "type": "null" }
+          ]
+        }
+      }
+    },
+    "node": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["peer_id", "ipv4", "hostname", "proxy_cidrs", "listeners", "version"],
+      "properties": {
+        "peer_id": { "type": "integer", "minimum": 0, "maximum": 4294967295 },
+        "ipv4": { "type": "string" },
+        "hostname": { "type": "string" },
+        "proxy_cidrs": { "type": "array", "items": { "type": "string" } },
+        "listeners": { "type": "array", "items": { "type": "string" } },
+        "version": { "type": "string" }
+      }
+    },
+    "peer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "peer_id",
+        "ipv4",
+        "hostname",
+        "next_hop_peer_id",
+        "direct",
+        "path_cost",
+        "latency_ms",
+        "loss_rate",
+        "rx_bytes",
+        "tx_bytes",
+        "tunnel_protocols",
+        "version"
+      ],
+      "properties": {
+        "peer_id": { "type": "integer", "minimum": 0, "maximum": 4294967295 },
+        "ipv4": { "type": ["string", "null"] },
+        "hostname": { "type": "string" },
+        "next_hop_peer_id": { "type": "integer", "minimum": 0, "maximum": 4294967295 },
+        "direct": { "type": "boolean" },
+        "path_cost": { "type": "integer", "minimum": -2147483648, "maximum": 2147483647 },
+        "latency_ms": { "type": ["number", "null"], "minimum": 0 },
+        "loss_rate": { "type": ["number", "null"], "minimum": 0 },
+        "rx_bytes": { "type": ["integer", "null"], "minimum": 0 },
+        "tx_bytes": { "type": ["integer", "null"], "minimum": 0 },
+        "tunnel_protocols": { "type": "array", "items": { "type": "string" } },
+        "version": { "type": "string" }
+      }
+    },
+    "metric": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "value", "labels"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "value": { "type": "integer", "minimum": 0 },
+        "labels": {
+          "type": "object",
+          "maxProperties": 128,
+          "propertyNames": { "maxLength": 256 },
+          "additionalProperties": { "type": "string" }
+        }
+      }
+    },
+    "instance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["instance_id", "observed_at_ms", "node", "peers", "metrics", "errors"],
+      "properties": {
+        "instance_id": { "$ref": "#/$defs/uuid" },
+        "observed_at_ms": { "$ref": "#/$defs/timestampMs" },
+        "node": {
+          "oneOf": [
+            { "$ref": "#/$defs/node" },
+            { "type": "null" }
+          ]
+        },
+        "peers": { "type": "array", "items": { "$ref": "#/$defs/peer" } },
+        "metrics": { "type": "array", "items": { "$ref": "#/$defs/metric" } },
+        "errors": { "type": "array", "items": { "$ref": "#/$defs/error" } }
+      }
+    },
+    "machine": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["session", "observed_at_ms", "instances", "errors"],
+      "properties": {
+        "session": { "$ref": "#/$defs/session" },
+        "observed_at_ms": { "$ref": "#/$defs/timestampMs" },
+        "instances": { "type": "array", "items": { "$ref": "#/$defs/instance" } },
+        "errors": { "type": "array", "items": { "$ref": "#/$defs/error" } }
+      }
+    }
+  }
+}

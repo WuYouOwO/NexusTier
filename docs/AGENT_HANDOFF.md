@@ -7,9 +7,9 @@ This document is the engineering handoff for an AI agent or developer continuing
 - Repository: `https://github.com/WuYouOwO/NexusTier`
 - Default branch: `main`
 - License: GNU AGPLv3 (`AGPL-3.0-only` in Cargo metadata)
-- Current implemented product component: Rust native EasyTier gateway
+- Current implemented components: Rust native EasyTier gateway and Go telemetry controller foundation (WIP)
 - Gateway package: `nexustier-gateway 0.1.0`
-- Current workspace language: Rust 2024 edition
+- Current workspace languages: Rust 2024 edition and Go 1.25
 - Declared Rust MSRV: `1.95`
 - Baseline HEAD for this handoff update: `77747e1`
 - Latest completed documentation milestone before this update: `77747e1`
@@ -58,7 +58,7 @@ flowchart LR
     ET -. Encrypted mesh data plane .-> PEERS[Other EasyTier peers]
 ```
 
-Only the Rust gateway exists today. The Go controller, PostgreSQL schema, Redis integration, and Vue application have not been created.
+The Rust gateway and Go/PostgreSQL telemetry ingestion foundation exist today. Redis integration and the Vue application have not been created. The Go controller is source-level WIP and has no stable image or production deployment bundle yet.
 
 ## 4. Critical EasyTier Protocol Facts
 
@@ -93,18 +93,46 @@ The gateway currently provides:
 
 - Native EasyTier UDP listener, default `0.0.0.0:22020`.
 - Noise plus AES-GCM secure configuration channel.
+- Plaintext feature probes cannot register a heartbeat session.
+- Optional shared heartbeat admission token for the controller-foundation WIP.
+- Machine ID is immutable after the first accepted heartbeat on a connection.
 - Heartbeat validation requiring a Machine ID.
 - In-memory sessions indexed by EasyTier Machine ID.
 - Safe replacement when the same machine reconnects.
 - Reverse enumeration of running EasyTier network instances.
 - Reverse Node, Peer, Route, and Stats telemetry calls.
 - A NexusTier-owned JSON model that hides generated Protobuf details.
+- A versioned `nexustier.topology.v1` JSON Schema and cross-language fixture.
+- Collection UUIDs, collection boundaries, per-level observation times, and structured error codes.
 - Read-only Axum API, default `127.0.0.1:11211`.
 - Process and readiness probes.
 - Partial telemetry failure reporting.
+- Single-flight topology collection with a short snapshot cache.
+- Overall collection deadline and bounded machine concurrency.
 - Supervised UDP and HTTP services with graceful shutdown.
 - A non-root, multi-stage Dockerfile.
 - Automated GHCR publication and keyless Cosign signing on pushes to `main` and version tags.
+- A required Rust and Go quality job before every container build: fmt, locked Rust tests, strict Clippy, Go tests/vet, PostgreSQL integration tests, and topology contract checks.
+
+## 5.1 Implemented Controller WIP
+
+The Go controller currently provides:
+
+- Typed environment configuration and JSON structured logging.
+- A strict `nexustier.topology.v1` HTTP client using the shared fixture.
+- PostgreSQL migrations with advisory locking, transactions, and SHA-256 checksums.
+- Normalized current-state tables for machines, instances, nodes, and peer links.
+- Append-only metric samples by collection and structured collection errors.
+- Transactional ingestion idempotent by `collection_id`.
+- Detection of a reused collection ID with a different payload.
+- Observation-time and collection-time ordering that prevents stale snapshots from overwriting or deleting newer state.
+- Partial-failure preservation for missing RPC fields.
+- Inactive/disappeared state for entities absent from complete snapshots.
+- A sequential polling worker with timeout, jitter, and no overlap.
+- Internal `/healthz`, `/readyz`, and `/v1/telemetry/status` endpoints.
+- Graceful SIGINT/SIGTERM shutdown that waits for the worker before closing PostgreSQL.
+
+The controller API is unauthenticated and loopback-only by default. It is an internal operational API, not the future public control-plane API.
 
 HTTP endpoints:
 
@@ -128,6 +156,14 @@ The HTTP API is intentionally unauthenticated and read-only. It must remain boun
 ├── Cargo.lock
 ├── Dockerfile
 ├── README.md
+├── contracts/
+│   ├── topology-v1.schema.json
+│   └── fixtures/topology-v1.json
+├── controller/
+│   ├── cmd/nexustier-controller/main.go
+│   ├── internal/{api,config,database,gatewayclient,ingest,poller}/
+│   ├── go.mod
+│   └── go.sum
 ├── crates/
 │   └── nexustier-gateway/
 │       ├── Cargo.toml
@@ -144,6 +180,8 @@ The HTTP API is intentionally unauthenticated and read-only. It must remain boun
     ├── AGENT_HANDOFF.md
     ├── README.md
     ├── deployment-guide.zh-CN.md
+    ├── controller-code.zh-CN.md
+    ├── development-plan.zh-CN.md
     ├── gateway-guide.zh-CN.md
     ├── gateway-code.zh-CN.md
     └── usage-guide.zh-CN.md
@@ -161,10 +199,23 @@ Module ownership:
 | `telemetry.rs` | Reverse calls, DTO conversion, topology semantics |
 | `api.rs` | Axum routes, health/readiness, JSON error envelope |
 
+Controller ownership:
+
+| Directory | Responsibility |
+| --- | --- |
+| `cmd/nexustier-controller` | Process lifecycle, service wiring, signal shutdown |
+| `internal/config` | Typed environment configuration |
+| `internal/gatewayclient` | topology v1 types, validation, strict HTTP decoding |
+| `internal/database` | pgx pool and checksummed migrations |
+| `internal/ingest` | Transactional normalized PostgreSQL ingestion |
+| `internal/poller` | Sequential polling and status state |
+| `internal/api` | Internal controller health/readiness/status endpoints |
+
 Read `docs/usage-guide.zh-CN.md` first for the current task-oriented user path and
 `docs/deployment-guide.zh-CN.md` for production operations. The detailed source
 walkthrough is `docs/gateway-code.zh-CN.md`; the English operational guide is
 `crates/nexustier-gateway/README.md`.
+Read `controller/README.md` and `docs/controller-code.zh-CN.md` before changing controller persistence or polling semantics.
 
 ## 7. Important Internal Contracts
 
@@ -214,14 +265,28 @@ Never expose EasyTier generated Protobuf messages directly from Axum. Convert th
 
 The heartbeat's `user_token` is deliberately omitted from all API DTOs and logs intended for consumers.
 
+### Controller ingestion safety
+
+- `collection_id` is the retry idempotency key. Same ID plus different JSON is an error.
+- Current state is ordered by observation time and collection completion time.
+- A stale snapshot may be audited but must not overwrite or delete newer current state.
+- Absence means inactive only when the relevant enumeration succeeded.
+- Machine/instance disappearance is represented with `active=false`; do not destroy history.
+- Partial `list_peers` failures preserve prior direct RTT, loss, traffic, and protocols.
+- Never edit an applied migration in place; add a new file. Checksums deliberately fail startup on drift.
+
 ## 8. Configuration and Security Defaults
 
 | CLI option | Environment variable | Default |
 | --- | --- | --- |
 | `--listen-addr` | `NEXUSTIER_GATEWAY_LISTEN_ADDR` | `0.0.0.0` |
 | `--listen-port` | `NEXUSTIER_GATEWAY_LISTEN_PORT` | `22020` |
+| `--admission-token` | `NEXUSTIER_GATEWAY_ADMISSION_TOKEN` | unset |
 | `--api-addr` | `NEXUSTIER_GATEWAY_API_ADDR` | `127.0.0.1:11211` |
 | `--rpc-timeout-ms` | `NEXUSTIER_GATEWAY_RPC_TIMEOUT_MS` | `5000` |
+| `--collection-timeout-ms` | `NEXUSTIER_GATEWAY_COLLECTION_TIMEOUT_MS` | `15000` |
+| `--machine-concurrency` | `NEXUSTIER_GATEWAY_MACHINE_CONCURRENCY` | `8` |
+| `--snapshot-ttl-ms` | `NEXUSTIER_GATEWAY_SNAPSHOT_TTL_MS` | `1000` |
 
 Container behavior differs intentionally: `NEXUSTIER_GATEWAY_API_ADDR=0.0.0.0:11211` inside the container so the API can be reached over a private container network or explicitly published to host loopback.
 
@@ -278,7 +343,7 @@ cargo fmt --all -- --check
 git diff --check
 ```
 
-Current expected test count: 8.
+Current expected test count: 14.
 
 Coverage includes:
 
@@ -288,10 +353,33 @@ Coverage includes:
 - Relayed path latency and next-hop conversion.
 - A real EasyTier v2.6.4 WebClient.
 - Secure feature negotiation and reconnect.
+- Rejection of plaintext heartbeats, invalid shared admission tokens, and Machine ID changes within a session.
+- Exact topology v1 producer serialization against the shared contract fixture.
+- Single-flight collection sharing and snapshot TTL expiry.
 - A real no-TUN EasyTier network instance.
 - Reverse `list_network_instance`, `show_node_info`, `list_peer`, `list_route`, and `get_stats` calls.
 
 The integration test does not require root, TUN, network namespaces, or `NET_ADMIN`.
+
+Run these after controller changes:
+
+```bash
+cd controller
+go test ./...
+go vet ./...
+go test -race ./internal/gatewayclient ./internal/poller ./internal/api
+```
+
+Database ingestion changes also require a dedicated empty PostgreSQL database:
+
+```bash
+NEXUSTIER_TEST_DATABASE_URL='<test database URL>' \
+  go test ./internal/ingest -count=1
+```
+
+The integration test truncates telemetry tables. Never point it at production or valuable data. PostgreSQL 18.4 was used for the local verified baseline. Verified cases include migration repeatability, duplicate collections, collection ID payload conflicts, stale snapshot deletion prevention, partial peer failure preservation, and inactive entity convergence.
+
+A real controller process smoke test with a fixture Gateway and isolated PostgreSQL also verified migrations, first polling, all three internal APIs, normalized writes, and clean SIGTERM exit.
 
 The release build and real process smoke test were also verified. Smoke-test expectations with no clients:
 
@@ -311,6 +399,7 @@ The container publication path is operational and has been verified end to end:
 - Version tags matching `v*.*.*` publish semantic-version tags.
 - Published manifests are signed keylessly with Cosign through GitHub OIDC.
 - Anonymous GHCR manifest retrieval has been verified.
+- Container builds now depend on a read-only quality job; non-PR publication alone receives package write and OIDC signing permissions. This workflow change still requires its first hosted GitHub Actions run after merge.
 
 The first fully successful publication after the build fixes was run
 `30452969418` for commit `fd554d8`. Run `30502517506` for documentation commit
@@ -363,12 +452,11 @@ These are intentional MVP limits, not hidden bugs:
 - Sessions are memory-only and recover through client reconnect after restart.
 - Long-lived client connections cannot migrate between gateway replicas.
 - Redis does not synchronize sessions today.
-- Topology is collected live on each `/v1/topology` request.
-- There is no historical telemetry storage.
+- Gateway topology is collected through a single-flight task and reused for the configured short TTL.
 - The HTTP API has no authentication.
-- There is no rate limit or topology snapshot cache yet.
-- There is no Go controller.
-- There is no PostgreSQL schema or migration framework.
+- Controller metric samples have no retention, partitioning, or compaction policy yet.
+- Controller has no public topology query API yet.
+- Controller has no stable image, Compose stack, systemd unit, or HA design.
 - There is no Redis integration.
 - There is no Vue frontend.
 - IPAM, ACL compilation, SSO, SSH, and RDP features are not implemented.
@@ -378,33 +466,15 @@ Avoid presenting README roadmap features as implemented software.
 
 ## 14. Recommended Next Development Slice
 
-The next module should be the Go control-plane telemetry ingestion foundation. Keep the same small-step rule: finish and verify one module before starting the frontend.
+The next slice should make persisted telemetry operable before adding Redis or a frontend:
 
-Recommended order:
+1. Add metric retention and PostgreSQL partitioning/compaction policy.
+2. Add read-only controller models and APIs for current machines, instances, links, collection freshness, and errors.
+3. Add pagination, stable ordering, filtering, and API contract tests.
+4. Add a development Compose stack and controller container only after the runtime/config contract settles.
+5. Add Redis publication after durable reads and retention are correct.
 
-1. Create a Go controller module with typed configuration and structured logging.
-2. Design PostgreSQL migrations for machines, network instances, nodes, peer links, metric samples, and collection runs.
-3. Define a typed Go client for the Rust `/v1/topology` contract.
-4. Implement an idempotent topology upsert transaction.
-5. Add a bounded polling worker with timeout, jitter, and overlap prevention.
-6. Add retention policy support for high-volume metrics.
-7. Expose a minimal controller health/read API.
-8. Add Redis publication only after durable PostgreSQL ingestion is correct.
-
-Suggested first concrete deliverable:
-
-> PostgreSQL schema and migrations plus Go model tests for devices, EasyTier instances, nodes, peer links, metric samples, and telemetry collection status.
-
-Design requirements for that slice:
-
-- Preserve the Rust API's machine/instance hierarchy.
-- Treat Machine ID and Instance ID as UUIDs.
-- Treat EasyTier Peer ID as network-instance scoped, not globally unique.
-- Model links with observed source instance, destination Peer ID, next hop, direct/relayed state, RTT, loss, traffic counters, and observation time.
-- Do not store every topology response as an opaque JSON blob instead of normalized state. A raw payload audit column may be supplementary, not the primary model.
-- Keep metric retention separate from current topology state.
-- Make ingestion idempotent for repeated snapshots.
-- Record partial collection errors without discarding successful machine or instance data.
+Do not start Redis, WebSocket, Vue, IPAM, and ACL work simultaneously. The next concrete deliverable should be retention plus a minimal current-topology read API with PostgreSQL integration tests.
 
 ## 15. Rules for Future Changes
 
@@ -436,7 +506,6 @@ For a new agent:
 7. Run the locked test and Clippy commands.
 8. Check the latest `Build and publish container image` run after changes to
   `main`; a successful push also updates and signs GHCR tags.
-9. Choose one small next module; do not start Go, database, Redis, and frontend
-  work simultaneously.
+9. Choose one small next module; keep retention/read API separate from Redis and frontend work.
 10. Update this handoff when architecture, verified commands, publication state,
    or milestone status changes.

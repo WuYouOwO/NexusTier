@@ -52,9 +52,21 @@ pub async fn serve(
 }
 
 impl ApiState {
-    pub fn new(sessions: SessionPool, rpc_timeout: Duration) -> Self {
+    pub fn new(
+        sessions: SessionPool,
+        rpc_timeout: Duration,
+        collection_timeout: Duration,
+        machine_concurrency: usize,
+        snapshot_ttl: Duration,
+    ) -> Self {
         Self {
-            telemetry: TelemetryCollector::new(sessions.clone(), rpc_timeout),
+            telemetry: TelemetryCollector::new(
+                sessions.clone(),
+                rpc_timeout,
+                collection_timeout,
+                machine_concurrency,
+                snapshot_ttl,
+            ),
             sessions,
         }
     }
@@ -157,6 +169,9 @@ mod tests {
     fn empty_api() -> axum::Router {
         router(ApiState::new(
             SessionPool::default(),
+            Duration::from_millis(100),
+            Duration::from_secs(1),
+            1,
             Duration::from_millis(100),
         ))
     }

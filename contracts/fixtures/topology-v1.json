@@ -1,0 +1,75 @@
+{
+  "schema_version": "nexustier.topology.v1",
+  "collection_id": "11111111-1111-4111-8111-111111111111",
+  "started_at_ms": 1785319201000,
+  "completed_at_ms": 1785319202000,
+  "collected_at_ms": 1785319202000,
+  "machines": [
+    {
+      "session": {
+        "machine_id": "22222222-2222-4222-8222-222222222222",
+        "remote_url": "udp://203.0.113.10:42000",
+        "hostname": "edge-shanghai-01",
+        "easytier_version": "2.6.4",
+        "report_time": "2026-07-29T18:00:00+08:00",
+        "connected_at_ms": 1785319200000,
+        "last_heartbeat_at_ms": 1785319201000,
+        "running_instance_ids": [
+          "33333333-3333-4333-8333-333333333333"
+        ],
+        "device": {
+          "os_type": "linux",
+          "os_version": "6.12.0",
+          "distribution": "Debian GNU/Linux 13"
+        }
+      },
+      "observed_at_ms": 1785319202000,
+      "instances": [
+        {
+          "instance_id": "33333333-3333-4333-8333-333333333333",
+          "observed_at_ms": 1785319201900,
+          "node": {
+            "peer_id": 1001,
+            "ipv4": "10.10.0.1/24",
+            "hostname": "edge-shanghai-01",
+            "proxy_cidrs": [],
+            "listeners": ["udp://0.0.0.0:11010"],
+            "version": "2.6.4"
+          },
+          "peers": [
+            {
+              "peer_id": 1002,
+              "ipv4": "10.10.0.2/24",
+              "hostname": "edge-beijing-01",
+              "next_hop_peer_id": 1002,
+              "direct": true,
+              "path_cost": 1,
+              "latency_ms": 18.42,
+              "loss_rate": 0.001,
+              "rx_bytes": 1048576,
+              "tx_bytes": 524288,
+              "tunnel_protocols": ["udp"],
+              "version": "2.6.4"
+            }
+          ],
+          "metrics": [
+            {
+              "name": "bytes_rx",
+              "value": 1048576,
+              "labels": {}
+            }
+          ],
+          "errors": [
+            {
+              "code": "rpc_timeout",
+              "operation": "get_stats",
+              "message": "deadline elapsed"
+            }
+          ]
+        }
+      ],
+      "errors": []
+    }
+  ],
+  "errors": []
+}

@@ -18,13 +18,15 @@ const FIRST_HEARTBEAT_TIMEOUT: Duration = Duration::from_secs(15);
 pub struct Gateway {
     listener: UdpTunnelListener,
     sessions: SessionPool,
+    admission_token: Option<Arc<str>>,
 }
 
 impl Gateway {
-    pub fn new(listen_url: Url) -> Self {
+    pub fn new(listen_url: Url, admission_token: Option<String>) -> Self {
         Self {
             listener: UdpTunnelListener::new(listen_url),
             sessions: SessionPool::default(),
+            admission_token: admission_token.map(Into::into),
         }
     }
 
@@ -49,8 +51,9 @@ impl Gateway {
                 accepted = self.listener.accept() => {
                     let tunnel = accepted.context("EasyTier listener stopped accepting clients")?;
                     let sessions = self.sessions.clone();
+                    let admission_token = self.admission_token.clone();
                     tasks.spawn(async move {
-                        if let Err(error) = Self::accept_session(tunnel, sessions).await {
+                        if let Err(error) = Self::accept_session(tunnel, sessions, admission_token).await {
                             tracing::warn!(%error, "EasyTier session rejected");
                         }
                     });
@@ -81,6 +84,7 @@ impl Gateway {
     async fn accept_session(
         tunnel: Box<dyn easytier::tunnel::Tunnel>,
         sessions: SessionPool,
+        admission_token: Option<Arc<str>>,
     ) -> anyhow::Result<()> {
         let (tunnel, secure) = security::accept_or_upgrade_server_tunnel(tunnel)
             .await
@@ -92,7 +96,7 @@ impl Gateway {
             .context("accepted tunnel has no remote address")?
             .into();
 
-        let mut session = GatewaySession::new(remote_url.clone());
+        let mut session = GatewaySession::new(remote_url.clone(), secure, admission_token);
         session.serve(tunnel);
         let snapshot = session
             .wait_for_first_heartbeat(FIRST_HEARTBEAT_TIMEOUT)
@@ -151,7 +155,7 @@ mod tests {
         let listen_url: url::Url = format!("udp://127.0.0.1:{port}")
             .parse()
             .expect("build gateway URL");
-        let gateway = Gateway::new(listen_url.clone());
+        let gateway = Gateway::new(listen_url.clone(), None);
         let sessions = gateway.sessions.clone();
         let (shutdown_tx, shutdown_rx) = watch::channel(false);
         let gateway_task = tokio::spawn(gateway.serve(shutdown_rx));
@@ -198,7 +202,13 @@ mod tests {
         .expect("native client should register before timeout");
 
         assert_eq!(sessions.len(), 1);
-        let telemetry = TelemetryCollector::new(sessions.clone(), Duration::from_secs(2));
+        let telemetry = TelemetryCollector::new(
+            sessions.clone(),
+            Duration::from_secs(2),
+            Duration::from_secs(10),
+            2,
+            Duration::from_millis(100),
+        );
         let session_views = telemetry.sessions().await;
         assert_eq!(session_views.len(), 1);
         assert_eq!(session_views[0].machine_id, machine_id);
@@ -230,7 +240,7 @@ mod tests {
 
     #[test]
     fn new_gateway_starts_with_an_empty_session_pool() {
-        let gateway = Gateway::new("udp://127.0.0.1:22020".parse().expect("valid URL"));
+        let gateway = Gateway::new("udp://127.0.0.1:22020".parse().expect("valid URL"), None);
         assert_eq!(gateway.session_count(), 0);
     }
 }

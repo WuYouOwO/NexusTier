@@ -52,6 +52,8 @@ struct SessionState {
 struct GatewayRpcService {
     state: Arc<RwLock<SessionState>>,
     heartbeat_tx: watch::Sender<Option<HeartbeatRequest>>,
+    secure: bool,
+    admission_token: Option<Arc<str>>,
 }
 
 #[async_trait]
@@ -63,11 +65,29 @@ impl WebServerService for GatewayRpcService {
         _: BaseController,
         request: HeartbeatRequest,
     ) -> rpc_types::error::Result<HeartbeatResponse> {
-        if request.machine_id.is_none() {
-            return Err(anyhow::anyhow!("heartbeat is missing machine_id").into());
+        let machine_id = request
+            .machine_id
+            .ok_or_else(|| anyhow::anyhow!("heartbeat is missing machine_id"))?;
+        if !self.secure {
+            return Err(anyhow::anyhow!("heartbeat requires a secure session").into());
+        }
+        if self
+            .admission_token
+            .as_deref()
+            .is_some_and(|expected| request.user_token != expected)
+        {
+            return Err(anyhow::anyhow!("heartbeat admission token was rejected").into());
         }
 
         let mut state = self.state.write().await;
+        if state
+            .heartbeat
+            .as_ref()
+            .and_then(|heartbeat| heartbeat.machine_id)
+            .is_some_and(|current| current != machine_id)
+        {
+            return Err(anyhow::anyhow!("heartbeat machine_id changed during the session").into());
+        }
         state.heartbeat = Some(request.clone());
         state.last_heartbeat_at_ms = unix_time_ms();
         drop(state);
@@ -93,7 +113,7 @@ pub struct GatewaySession {
 }
 
 impl GatewaySession {
-    pub fn new(remote_url: Url) -> Self {
+    pub fn new(remote_url: Url, secure: bool, admission_token: Option<Arc<str>>) -> Self {
         let connected_at_ms = unix_time_ms();
         let state = Arc::new(RwLock::new(SessionState {
             remote_url,
@@ -109,6 +129,8 @@ impl GatewaySession {
             WebServerServiceServer::new(GatewayRpcService {
                 state: state.clone(),
                 heartbeat_tx,
+                secure,
+                admission_token,
             }),
             "",
         );
@@ -122,6 +144,17 @@ impl GatewaySession {
 
     pub fn serve(&mut self, tunnel: Box<dyn Tunnel>) {
         self.rpc_manager.run_with_tunnel(tunnel);
+    }
+
+    #[cfg(test)]
+    fn rpc_service(&self, secure: bool, admission_token: Option<Arc<str>>) -> GatewayRpcService {
+        let (heartbeat_tx, _) = watch::channel(None);
+        GatewayRpcService {
+            state: self.state.clone(),
+            heartbeat_tx,
+            secure,
+            admission_token,
+        }
     }
 
     pub fn is_running(&self) -> bool {
@@ -209,4 +242,80 @@ fn unix_time_ms() -> u64 {
         .as_millis()
         .try_into()
         .unwrap_or(u64::MAX)
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use easytier::proto::{
+        rpc_types::controller::BaseController,
+        web::{HeartbeatRequest, WebServerService},
+    };
+
+    use super::GatewaySession;
+
+    fn heartbeat(machine_id: uuid::Uuid, token: &str) -> HeartbeatRequest {
+        HeartbeatRequest {
+            machine_id: Some(machine_id.into()),
+            user_token: token.to_string(),
+            ..Default::default()
+        }
+    }
+
+    fn session() -> GatewaySession {
+        GatewaySession::new("udp://127.0.0.1:10001".parse().unwrap(), true, None)
+    }
+
+    #[tokio::test]
+    async fn plaintext_session_rejects_heartbeat_registration() {
+        let service = session().rpc_service(false, None);
+
+        let error = service
+            .heartbeat(
+                BaseController::default(),
+                heartbeat(uuid::Uuid::new_v4(), "token"),
+            )
+            .await
+            .expect_err("plaintext heartbeat must be rejected");
+
+        assert!(error.to_string().contains("secure session"));
+    }
+
+    #[tokio::test]
+    async fn configured_admission_token_is_required() {
+        let service = session().rpc_service(true, Some(Arc::from("expected-token")));
+
+        let error = service
+            .heartbeat(
+                BaseController::default(),
+                heartbeat(uuid::Uuid::new_v4(), "wrong-token"),
+            )
+            .await
+            .expect_err("wrong token must be rejected");
+
+        assert!(error.to_string().contains("admission token"));
+    }
+
+    #[tokio::test]
+    async fn machine_id_cannot_change_during_a_session() {
+        let service = session().rpc_service(true, Some(Arc::from("expected-token")));
+        service
+            .heartbeat(
+                BaseController::default(),
+                heartbeat(uuid::Uuid::new_v4(), "expected-token"),
+            )
+            .await
+            .expect("first heartbeat should authenticate the session");
+
+        let error = service
+            .heartbeat(
+                BaseController::default(),
+                heartbeat(uuid::Uuid::new_v4(), "expected-token"),
+            )
+            .await
+            .expect_err("machine ID changes must be rejected");
+
+        assert!(error.to_string().contains("machine_id changed"));
+    }
 }

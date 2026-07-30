@@ -59,6 +59,7 @@ flowchart TD
 默认设计体现了安全边界：
 
 - EasyTier 入口绑定 `0.0.0.0:22020`，允许外部客户端接入。
+- 可选共享准入 Token 默认未配置，便于兼容开发环境；生产 WIP 部署应显式配置。
 - 管理 API 绑定 `127.0.0.1:11211`，默认不对外暴露。
 - 每个 EasyTier 反向 RPC 默认有 5 秒 deadline。
 
@@ -78,7 +79,7 @@ flowchart TD
 
 `accept_session()` 先调用 EasyTier 的 `accept_or_upgrade_server_tunnel()`。该函数识别普通能力探测连接和 Noise 安全握手，并返回最终 Tunnel 及 `secure` 标志。
 
-服务端只在收到首个合法心跳后才把 Session 放入 Pool。能力探测连接通常不会发送心跳，它关闭后会在约 100 ms 内被识别和回收，最长首心跳等待时间为 15 秒。
+服务端允许明文能力探测，但拒绝明文心跳。只有 Noise + AES-GCM 安全重连收到首个合法心跳后才把 Session 放入 Pool。能力探测连接通常不会发送心跳，它关闭后会在约 100 ms 内被识别和回收，最长首心跳等待时间为 15 秒。
 
 ### 5.3 注册与断开
 
@@ -108,7 +109,7 @@ Tunnel -> GatewaySession -> 首个 Heartbeat -> Machine ID -> SessionPool
 `GatewayRpcService` 实现 EasyTier `WebServerService`：
 
 - `get_feature()` 告诉客户端网关支持安全配置通道。
-- `heartbeat()` 校验 Machine ID，更新最后心跳和客户端元数据，并返回空的兼容响应。
+- `heartbeat()` 要求安全通道，校验 Machine ID 和可选共享准入 Token，并固定首个心跳的 Machine ID；通过后更新最后心跳和客户端元数据。
 
 Session 状态放在 `Arc<RwLock<SessionState>>` 中：心跳写入频率低，HTTP 快照读取可并发进行。`watch` channel 只用于通知首个心跳到达，不承担历史消息队列职责。
 
@@ -150,7 +151,7 @@ DashMap<Uuid, Arc<GatewaySession>>
 1. 并发遍历所有 Machine Session。
 2. 每台机器先调用 `list_network_instance()`，再逐实例采集。
 
-不同机器通过 `JoinSet` 并发。单台机器内的实例当前顺序采集，以限制客户端 RPC 压力；单个实例的四类 RPC 使用 `tokio::join!` 并行：
+不同机器通过 `JoinSet` 并发，但只维持配置的最大机器并发数；完成一台后才从待处理队列补入下一台。单台机器内的实例当前顺序采集，以限制客户端 RPC 压力；单个实例的四类 RPC 使用 `tokio::join!` 并行：
 
 ```text
 show_node_info ─┐
@@ -160,6 +161,8 @@ get_stats ──────┘
 ```
 
 每个 RPC 单独套 `tokio::time::timeout()`。超时或 RPC 错误通过 `rpc_value()` 转换为 `TelemetryError`，其他成功字段仍然返回。
+
+`TelemetryCollector` 的共享状态还实现了单飞与短期缓存：首个请求启动后台采集，并发请求通过 `watch` 等待同一结果；TTL 内直接复用已完成快照。整轮采集使用独立总期限，到期后中止未完成任务、保留已完成机器，并增加快照级 `collection_timeout` 错误。
 
 ### 8.2 DTO 解耦
 
@@ -175,6 +178,10 @@ get_stats ──────┘
 - `TelemetryError`
 
 这样做避免 Go 控制器和前端依赖 EasyTier Protobuf 字段。未来升级 EasyTier 时，只需修改 Rust 转换层，并保持 HTTP JSON 契约稳定。
+
+`TopologySnapshot` 当前固定声明 `nexustier.topology.v1`，包含一次采集的 UUID、开始/完成时间和快照级错误；Machine 与 Instance 各自携带 `observed_at_ms`。`TelemetryError.code` 区分 Session 不可用、RPC 错误、RPC 超时和采集任务失败，控制器不需要解析错误消息文本。
+
+仓库 `contracts/` 中的 JSON Schema 是跨语言规范，固定 fixture 同时由 Rust 生产者和后续 Go 消费者测试。任何字段删除、改名或类型收窄都必须显式升级契约版本。
 
 ### 8.3 Peer 与 Route 合并
 
@@ -215,7 +222,10 @@ Axum Router 只暴露四个 GET 端点。`ApiState` 同时持有 Session Pool �
 | 风险 | 当前处理 |
 | --- | --- |
 | Tunnel 缺少远端元数据 | 拒绝当前连接并记录警告 |
+| 明文连接发送心跳 | RPC 返回错误，不注册 Session |
+| 心跳共享 Token 不匹配 | RPC 返回错误，不注册 Session |
 | 心跳缺少 Machine ID | RPC 返回错误，不注册 Session |
+| 会话内 Machine ID 改变 | RPC 返回错误，保留原身份 |
 | 客户端只做能力探测 | 通道关闭后快速回收，最长 15 秒超时 |
 | 同一 Machine ID 重连 | 新 Session 替换并停止旧 Session |
 | 旧 Session 延迟退出 | 指针身份检查，不能删除新 Session |
@@ -230,8 +240,11 @@ Axum Router 只暴露四个 GET 端点。`ApiState` 同时持有 Session Pool �
 
 - API 健康、就绪和 404 错误契约。
 - Session Pool 重连竞态。
+- 明文心跳、错误准入 Token 和会话内 Machine ID 变化拒绝路径。
 - 直连 RTT、流量、丢包字段映射。
 - 中继路径延迟和下一跳字段映射。
+- topology v1 固定 fixture 与 Rust 序列化结果一致。
+- 并发拓扑请求共享一次采集，TTL 到期后才生成新 `collection_id`。
 - 真实 EasyTier v2.6.4 WebClient 安全注册。
 - 真实 no-TUN EasyTier 实例。
 - 反向 `list_network_instance`、`show_node_info`、`list_peer`、`list_route` 和 `get_stats`。
@@ -248,10 +261,9 @@ Axum Router 只暴露四个 GET 端点。`ApiState` 同时持有 Session Pool �
 - 不执行 IPAM、ACL 编译、SSO 准入或配置持久化。
 - 单机网关尚未通过 Redis 同步 Session；长连接本身也不能跨进程迁移。
 
-下一阶段由 Go 控制器完成：
+当前 Go 控制器 WIP 已完成 topology v1 定时轮询、PostgreSQL 规范化写入、
+幂等/乱序保护、局部失败保留与内部状态 API。实现说明见
+[Go 控制器源码架构解析](controller-code.zh-CN.md)。
 
-1. 定时调用 `/v1/topology`。
-2. 将设备、实例、Peer 链路和指标写入 PostgreSQL。
-3. 通过 Redis Pub/Sub 分发拓扑更新。
-4. 向 Vue 3 控制台提供稳定 REST/WebSocket API。
-5. 后续把声明式 ACL 和 IPAM 配置通过 Rust 网关反向下发给 EasyTier 实例。
+下一切片应实现指标保留/分区和当前拓扑只读查询 API；Redis Pub/Sub、Vue
+控制台、ACL/IPAM 配置下发仍属于后续阶段。

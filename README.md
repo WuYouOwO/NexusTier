@@ -63,7 +63,7 @@
 
 ## 🛠️ 技术栈 (Tech Stack)
 
-*   **控制面核心 (Control Plane)**: Go (Golang) / GoBGP / Gin / Gorm / Redis / PostgreSQL
+*   **控制面核心 (Control Plane)**: Go / `net/http` / pgx / PostgreSQL；后续 GoBGP / Redis
 *   **协议转换层 (Protocol Gateway)**: Rust / Tokio / Protobuf
 *   **客户端代理 (Agent & GUI)**: Rust / Go / Tauri / TypeScript
 *   **前端大屏 (Frontend Panel)**: Vue 3 / React / Vite / Tailwind CSS / ECharts GL
@@ -77,14 +77,31 @@
 *   兼容 EasyTier `v2.6.4` 原生 UDP WebClient 协议，默认监听 `22020/UDP`。
 *   支持 Noise + AES-GCM 安全配置通道，不修改 `easytier-core` 客户端代码。
 *   使用 Machine ID 维护并发内存 Session Pool，安全处理断线、重连与连接替换。
+*   当前源码 WIP 只允许 Noise + AES-GCM 安全重连注册，可选校验共享准入 Token，并禁止会话内切换 Machine ID。
 *   通过原生双向 RPC 反向采集 Node、Peer、Route、RTT、流量和 Stats 指标。
+*   当前源码 WIP 提供 `nexustier.topology.v1` JSON Schema、固定跨语言 fixture、采集 ID、分层观测时间和结构化局部错误。
 *   在 `127.0.0.1:11211` 暴露只读 `/healthz`、`/readyz`、`/v1/sessions` 和 `/v1/topology` API。
 *   提供非 root 多阶段容器镜像，不需要 TUN 权限或额外 Linux capabilities。
+
+下一阶段的 Go 控制器遥测摄取基础已进入 WIP：
+
+*   严格消费共享的 `nexustier.topology.v1` 契约。
+*   提供 PostgreSQL migrations 与 Machine、Instance、Node、Peer、Metric、Error 规范化模型。
+*   使用单事务、`collection_id` 和时序门控实现幂等摄取、乱序保护与局部失败保留。
+*   使用超时、抖动和禁止重叠的轮询 worker，并暴露内部健康、就绪与摄取状态 API。
+*   已通过 PostgreSQL 18 集成测试和进程级 Gateway fixture 联调；尚未发布稳定控制器镜像。
 
 开发运行：
 
 ```bash
 cargo run --locked --package nexustier-gateway
+```
+
+控制器开发运行：
+
+```bash
+export NEXUSTIER_CONTROLLER_DATABASE_URL='postgres://nexustier:password@127.0.0.1:5432/nexustier?sslmode=require'
+go run ./controller/cmd/nexustier-controller
 ```
 
 中文文档：
@@ -94,9 +111,12 @@ cargo run --locked --package nexustier-gateway
 *   [NexusTier Gateway 0.1.0 生产部署指南](docs/deployment-guide.zh-CN.md)
 *   [Rust 网关使用与部署手册](docs/gateway-guide.zh-CN.md)
 *   [Rust 网关源码架构解析](docs/gateway-code.zh-CN.md)
+*   [Go 控制器 WIP 运行说明](controller/README.md)
+*   [Go 控制器源码架构解析](docs/controller-code.zh-CN.md)
 *   [AI Agent Engineering Handoff (English)](docs/AGENT_HANDOFF.md)
+*   [下一阶段开发计划（WIP）](docs/development-plan.zh-CN.md)
 
-英文配置、API 与容器说明见 [Rust 网关文档](crates/nexustier-gateway/README.md)。
+英文 Gateway 配置、API 与容器说明见 [Rust 网关文档](crates/nexustier-gateway/README.md)。
 
 ---
 

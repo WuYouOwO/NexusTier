@@ -4,10 +4,9 @@
 
 本文面向 NexusTier 当前已实现的 `nexustier-gateway 0.1.0`，提供 Linux 单机和 Docker 两种部署路径。
 
-当前版本只包含 Rust 协议网关，不包含以下组件：
+本文只部署已发布的 Rust Gateway 0.1.0，不覆盖以下组件：
 
-- Go 控制器。
-- PostgreSQL 数据库与迁移。
+- 当前仓库中的 Go Controller/PostgreSQL 摄取 WIP（见 [`controller/README.md`](../controller/README.md)）。
 - Redis Pub/Sub。
 - Vue 3 控制台。
 - IPAM、ACL 编译、SSO、SSH 或 RDP 功能。
@@ -124,7 +123,7 @@ CARGO_BUILD_JOBS=1 cargo clippy --locked --workspace --all-targets -- -D warning
 cargo fmt --all -- --check
 ```
 
-当前预期测试数量为 8 项。
+当前源码预期 Rust 测试数量为 14 项；发布 Gateway 0.1.0 时的历史基线为 8 项。
 
 ### 5.4 构建 release
 
@@ -202,15 +201,20 @@ install -d -o root -g nexustier -m 0750 /etc/nexustier
 cat >/etc/nexustier/gateway.env <<'EOF'
 NEXUSTIER_GATEWAY_LISTEN_ADDR=0.0.0.0
 NEXUSTIER_GATEWAY_LISTEN_PORT=22020
+# 当前源码 WIP 推荐设置；已发布 0.1.0 镜像不识别该变量。
+NEXUSTIER_GATEWAY_ADMISSION_TOKEN=replace-with-a-random-bootstrap-token
 NEXUSTIER_GATEWAY_API_ADDR=127.0.0.1:11211
 NEXUSTIER_GATEWAY_RPC_TIMEOUT_MS=5000
+NEXUSTIER_GATEWAY_COLLECTION_TIMEOUT_MS=15000
+NEXUSTIER_GATEWAY_MACHINE_CONCURRENCY=8
+NEXUSTIER_GATEWAY_SNAPSHOT_TTL_MS=1000
 RUST_LOG=info
 EOF
 chown root:nexustier /etc/nexustier/gateway.env
 chmod 0640 /etc/nexustier/gateway.env
 ```
 
-当前环境文件不包含数据库密码或 API Token。仍应限制读取权限，为后续控制面配置保留安全边界。
+准入 Token 属于敏感启动凭据，必须限制环境文件读取权限，不得提交到仓库。它是 WIP 阶段的共享凭据，后续仍需由控制器提供可撤销的设备级凭据。
 
 ### 6.4 创建 systemd 单元
 
@@ -324,7 +328,7 @@ ufw status verbose
 
 - 云安全组入站仅放行 UDP `22020`。
 - 有固定客户端出口 IP 时，优先限制源地址。
-- 客户端来源会漫游时，可开放更宽源范围，但必须理解当前版本尚无 Token 准入校验。
+- 客户端来源会漫游时，可开放更宽源范围；从当前源码部署时应同时配置共享准入 Token，已发布 0.1.0 镜像仍不具备该校验。
 - 网关位于 NAT 后时，将公网 UDP `22020` 映射到网关 UDP `22020`。
 - DNS A/AAAA 记录应指向实际可达地址。
 - 不要把 TCP `11211` 加入公网安全组。
@@ -342,7 +346,7 @@ EasyTier v2.6.4 已确认的参数为：
 udp://<网关主机或 IP>:22020/<非空 Token>
 ```
 
-当前 `0.1.0` 网关不会验证 Token，它只用于兼容 EasyTier WebClient URL 和心跳。不要把该 Token 当作已经实现的零信任认证凭据。
+已发布的 `0.1.0` 镜像不会验证 Token。从当前源码构建的 WIP 网关可通过 `NEXUSTIER_GATEWAY_ADMISSION_TOKEN` 校验共享 Token，但它仍不是零信任设备凭据。
 
 ### 8.1 仅注册 Session
 
@@ -462,6 +466,8 @@ ghcr.io/wuyouowo/nexustier
 - 推送 `v*.*.*` 版本标签后发布语义版本、主次版本和提交 SHA 标签。
 - 也可以从 GitHub Actions 页面手动运行 `Build and publish container image`。
 - 发布镜像使用 GitHub OIDC 与 Cosign 进行无密钥签名。
+- 每次镜像构建前必须通过独立质量门禁：Rust 格式、锁定依赖测试、严格 Clippy 和 topology v1 契约资产检查。
+- Pull Request 工作流只拥有只读权限且不获取 OIDC Token；包写入和签名权限仅在非 PR 发布任务启用。
 
 拉取 GitHub 已发布镜像：
 
@@ -647,7 +653,7 @@ curl --fail http://127.0.0.1:11211/healthz
 - systemd 清空 capabilities，启用只读系统保护。
 - Docker 使用非 root 用户、只读根文件系统、`cap-drop ALL` 和 `no-new-privileges`。
 - 不在仓库、镜像或环境文件中硬编码代理、私钥和未来数据库凭据。
-- 不依赖当前 Token 做身份认证；`0.1.0` 尚未实现 Token 准入校验。
+- 当前源码部署应配置随机共享准入 Token，但不能用它替代后续设备级身份认证；已发布 `0.1.0` 尚未实现该校验。
 - 定期审查 EasyTier 固定 revision，不静默切换上游分支。
 - 对外宣称能力时区分当前已实现网关与 README 路线图。
 
@@ -672,7 +678,7 @@ curl --fail http://127.0.0.1:11211/healthz
 部署前：
 
 - [ ] 源码 commit 和 `Cargo.lock` 已冻结。
-- [ ] 8 项测试全部通过。
+- [ ] 当前源码 14 项 Rust 测试全部通过。
 - [ ] Clippy `-D warnings` 通过。
 - [ ] release 二进制版本、SHA-256、架构和动态依赖已记录。
 - [ ] UDP `22020` 的 DNS、NAT、防火墙和安全组已配置。
@@ -696,5 +702,7 @@ curl --fail http://127.0.0.1:11211/healthz
 - [NexusTier Gateway 0.1.0 使用指南](usage-guide.zh-CN.md)
 - [Rust 网关使用与 API 手册](gateway-guide.zh-CN.md)
 - [Rust 网关源码架构解析](gateway-code.zh-CN.md)
+- [Go 控制器 WIP 运行说明](../controller/README.md)
+- [Go 控制器源码架构解析](controller-code.zh-CN.md)
 - [智能体工程交接文档](AGENT_HANDOFF.md)
 - [英文网关说明](../crates/nexustier-gateway/README.md)

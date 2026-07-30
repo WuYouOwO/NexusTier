@@ -2,6 +2,8 @@
 
 本文面向希望直接运行当前版本 NexusTier Gateway 的用户，覆盖镜像拉取、服务启动、EasyTier 客户端接入、状态检查、遥测查询、升级和回滚。
 
+> 当前仓库正在开发下一阶段 WIP。下面固定到 `sha-fd554d8` 的已发布 0.1.0 镜像尚不包含共享 Token 校验；从当前源码构建的网关已经强制安全心跳，并支持可选 `NEXUSTIER_GATEWAY_ADMISSION_TOKEN`。
+
 更完整的生产主机、安全加固、systemd、防火墙和 NAT 配置参见[生产部署指南](deployment-guide.zh-CN.md)；所有 API 字段及 JSON 示例参见[Rust 网关使用与部署手册](gateway-guide.zh-CN.md)。
 
 ## 1. 当前版本
@@ -26,7 +28,8 @@
 
 当前版本尚未实现：
 
-- Go 控制器、Web 控制台、PostgreSQL 和 Redis。
+- 已发布的 Gateway 0.1.0 镜像不包含当前仓库中的 Go 控制器 WIP。
+- Web 控制台和 Redis。
 - 用户登录、RBAC、OIDC、IPAM 和 ACL 策略下发。
 - 通过网关创建或修改 EasyTier 网络实例。
 - HTTP API 身份认证。
@@ -124,7 +127,7 @@ udp://<网关域名或 IP>:22020/<非空 Token>
 udp://gateway.example.com:22020/bootstrap
 ```
 
-Token 当前随心跳进入网关，但不会出现在只读 API 响应中。当前版本尚未使用 Token 执行用户授权，不应把它视为完整的访问控制机制。
+Token 随心跳进入网关，但不会出现在只读 API 响应中。当前源码设置 `NEXUSTIER_GATEWAY_ADMISSION_TOKEN=bootstrap` 后会拒绝其他 Token；这只是共享启动凭据，不应视为完整的用户授权机制。已发布的固定 0.1.0 镜像仍不执行该校验。
 
 ### 3.2 使用 CLI 启动客户端
 
@@ -211,9 +214,14 @@ curl --fail --silent --show-error \
 响应按以下层级组织：
 
 ```text
+schema_version
+collection_id
+started_at_ms / completed_at_ms
 machines[]
+  observed_at_ms
   session
   instances[]
+    observed_at_ms
     node
     peers[]
     metrics[]
@@ -225,6 +233,10 @@ machines[]
 
 | 字段 | 含义 |
 | --- | --- |
+| `schema_version` | 当前跨语言契约版本 `nexustier.topology.v1` |
+| `collection_id` | 本次实际采集 UUID；缓存结果复用原 ID |
+| `started_at_ms` / `completed_at_ms` | 整次采集时间边界 |
+| `observed_at_ms` | Machine 或 Instance 的本轮观测时间 |
 | `session.machine_id` | EasyTier 客户端机器标识 |
 | `instances[].node.ipv4` | 当前网络实例的虚拟 IPv4 地址 |
 | `peers[].direct` | 是否为一跳直连 |
@@ -233,7 +245,7 @@ machines[]
 | `peers[].rx_bytes` / `tx_bytes` | Peer 连接累计流量 |
 | `peers[].tunnel_protocols` | 当前连接使用的隧道协议 |
 | `metrics[]` | EasyTier Stats 指标 |
-| `errors[]` | 局部 RPC 或实例采集错误 |
+| `errors[].code` | 稳定的机器错误类型；消息仅用于诊断 |
 
 遥测采用部分成功语义。某个实例或 RPC 超时会记录在相应 `errors` 中，不会导致其他机器和实例的数据全部丢失。
 
@@ -266,6 +278,16 @@ docker run ... \
 ```
 
 默认值为 `5000` 毫秒。该超时分别应用到每次反向 RPC，不是整份拓扑请求的总超时。
+
+当前源码还提供三项整轮采集保护：
+
+```bash
+-e NEXUSTIER_GATEWAY_COLLECTION_TIMEOUT_MS=15000 \
+-e NEXUSTIER_GATEWAY_MACHINE_CONCURRENCY=8 \
+-e NEXUSTIER_GATEWAY_SNAPSHOT_TTL_MS=1000
+```
+
+并发请求共享一轮采集，TTL 内复用相同 `collection_id`。总期限超时时，响应保留已完成机器，并在顶层 `errors` 返回 `collection_timeout`。
 
 ### 6.3 停止和启动
 
@@ -322,7 +344,7 @@ curl --fail http://127.0.0.1:11211/v1/sessions
 
 - 对公网只开放 UDP `22020`。
 - HTTP API 无认证，必须限制在回环地址或可信私有网络。
-- 配置服务器 Token 当前不是完整授权机制。
+- 当前源码只允许安全会话注册，并可校验共享配置服务器 Token；共享 Token 不是完整授权机制。
 - 网关不读取或转发 EasyTier 业务数据包。
 - 不要为容器添加 TUN、`NET_ADMIN`、host network 或特权模式。
 - 生产部署优先使用固定标签或 digest，并验证发布镜像的 Cosign 签名。

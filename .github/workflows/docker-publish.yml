@@ -19,8 +19,122 @@ env:
   REGISTRY: ghcr.io
 
 jobs:
-  build:
-    name: Build gateway image
+  quality:
+    name: Rust and Go quality gate
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: "1.95"
+          components: clippy, rustfmt
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: controller/go.mod
+          cache-dependency-path: controller/go.sum
+
+      - name: Install Protobuf compiler and definitions
+        run: sudo apt-get update && sudo apt-get install --yes libprotobuf-dev protobuf-compiler
+
+      - name: Cache Rust build artifacts
+        uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: nexustier-gateway-quality
+
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+
+      - name: Run tests
+        env:
+          CARGO_BUILD_JOBS: "1"
+        run: cargo test --locked --workspace
+
+      - name: Run Clippy
+        env:
+          CARGO_BUILD_JOBS: "1"
+        run: cargo clippy --locked --workspace --all-targets -- -D warnings
+
+      - name: Validate topology contract assets
+        run: |
+          jq empty contracts/topology-v1.schema.json contracts/fixtures/topology-v1.json
+          jq --exit-status \
+            '.schema_version == "nexustier.topology.v1"' \
+            contracts/fixtures/topology-v1.json >/dev/null
+
+      - name: Run controller tests
+        working-directory: controller
+        run: go test ./...
+
+      - name: Run controller vet
+        working-directory: controller
+        run: go vet ./...
+
+      - name: Run controller PostgreSQL integration tests
+        working-directory: controller
+        env:
+          NEXUSTIER_TEST_DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/nexustier_test?sslmode=disable
+        run: |
+          sudo systemctl start postgresql
+          sudo -u postgres psql --command "ALTER USER postgres PASSWORD 'postgres'"
+          sudo -u postgres createdb nexustier_test
+          go test ./internal/ingest -count=1
+
+  build-pr:
+    name: Build gateway image for pull request
+    if: github.event_name == 'pull_request'
+    needs: quality
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Normalize image name
+        id: image
+        shell: bash
+        run: echo "name=${GITHUB_REPOSITORY,,}" >> "${GITHUB_OUTPUT}"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@f95db51fddba0c2d1ec667646a06c2ce06100226 # v3.0.0
+
+      - name: Generate image metadata
+        id: meta
+        uses: docker/metadata-action@96383f45573cb7f253c731d3b3ab81c87ef81934 # v5.0.0
+        with:
+          images: ${{ env.REGISTRY }}/${{ steps.image.outputs.name }}
+          tags: type=ref,event=pr
+          labels: |
+            org.opencontainers.image.title=NexusTier Gateway
+            org.opencontainers.image.description=Native EasyTier protocol gateway for NexusTier
+            org.opencontainers.image.licenses=AGPL-3.0-only
+
+      - name: Build image
+        uses: docker/build-push-action@0565240e2d4ab88bba5387d719585280857ece09 # v5.0.0
+        with:
+          context: .
+          file: ./Dockerfile
+          platforms: linux/amd64
+          pull: true
+          push: false
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha,scope=nexustier-gateway
+          cache-to: type=gha,mode=max,scope=nexustier-gateway
+
+  publish:
+    name: Build and publish gateway image
+    if: github.event_name != 'pull_request'
+    needs: quality
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -32,11 +146,11 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Normalize image name
+        id: image
         shell: bash
-        run: echo "IMAGE_NAME=${GITHUB_REPOSITORY,,}" >> "${GITHUB_ENV}"
+        run: echo "name=${GITHUB_REPOSITORY,,}" >> "${GITHUB_OUTPUT}"
 
       - name: Install cosign
-        if: github.event_name != 'pull_request'
         uses: sigstore/cosign-installer@59acb6260d9c0ba8f4a2f9d9b48431a222b68e20 # v3.5.0
         with:
           cosign-release: "v2.2.4"
@@ -45,7 +159,6 @@ jobs:
         uses: docker/setup-buildx-action@f95db51fddba0c2d1ec667646a06c2ce06100226 # v3.0.0
 
       - name: Log in to GitHub Container Registry
-        if: github.event_name != 'pull_request'
         uses: docker/login-action@343f7c4344506bcbf9b4de18042ae17996df046d # v3.0.0
         with:
           registry: ${{ env.REGISTRY }}
@@ -56,7 +169,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@96383f45573cb7f253c731d3b3ab81c87ef81934 # v5.0.0
         with:
-          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          images: ${{ env.REGISTRY }}/${{ steps.image.outputs.name }}
           tags: |
             type=ref,event=branch
             type=ref,event=pr
@@ -77,27 +190,25 @@ jobs:
           file: ./Dockerfile
           platforms: linux/amd64
           pull: true
-          push: ${{ github.event_name != 'pull_request' }}
+          push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha,scope=nexustier-gateway
           cache-to: type=gha,mode=max,scope=nexustier-gateway
 
       - name: Sign published image
-        if: github.event_name != 'pull_request'
         env:
           TAGS: ${{ steps.meta.outputs.tags }}
           DIGEST: ${{ steps.build.outputs.digest }}
         run: echo "${TAGS}" | xargs -I {} cosign sign --yes "{}@${DIGEST}"
 
       - name: Publish summary
-        if: github.event_name != 'pull_request'
         shell: bash
         run: |
           {
             echo "## Published container image"
             echo
-            echo "Registry: \`${REGISTRY}/${IMAGE_NAME}\`"
+            echo "Registry: \`${REGISTRY}/${{ steps.image.outputs.name }}\`"
             echo
             echo "Digest: \`${{ steps.build.outputs.digest }}\`"
             echo
