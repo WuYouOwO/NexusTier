@@ -11,8 +11,10 @@ This document is the engineering handoff for an AI agent or developer continuing
 - Gateway package: `nexustier-gateway 0.1.0`
 - Current workspace language: Rust 2024 edition
 - Declared Rust MSRV: `1.95`
-- Latest completed documentation milestone before this handoff: `6824e59`
+- Baseline HEAD for this handoff update: `77747e1`
+- Latest completed documentation milestone before this update: `77747e1`
 - First complete gateway milestone: `fbc1a9d`
+- Latest verified container workflow run: `30502517506` (successful)
 
 Always run `git status --short` and inspect the latest commits before editing. Other agents or the user may commit while work is in progress. Do not rewrite or revert changes you did not create.
 
@@ -102,6 +104,7 @@ The gateway currently provides:
 - Partial telemetry failure reporting.
 - Supervised UDP and HTTP services with graceful shutdown.
 - A non-root, multi-stage Dockerfile.
+- Automated GHCR publication and keyless Cosign signing on pushes to `main` and version tags.
 
 HTTP endpoints:
 
@@ -118,6 +121,9 @@ The HTTP API is intentionally unauthenticated and read-only. It must remain boun
 
 ```text
 .
+├── .github/
+│   └── workflows/
+│       └── docker-publish.yml
 ├── Cargo.toml
 ├── Cargo.lock
 ├── Dockerfile
@@ -135,10 +141,12 @@ The HTTP API is intentionally unauthenticated and read-only. It must remain boun
 │           ├── telemetry.rs
 │           └── api.rs
 └── docs/
+    ├── AGENT_HANDOFF.md
     ├── README.md
+    ├── deployment-guide.zh-CN.md
     ├── gateway-guide.zh-CN.md
     ├── gateway-code.zh-CN.md
-    └── AGENT_HANDOFF.md
+    └── usage-guide.zh-CN.md
 ```
 
 Module ownership:
@@ -153,7 +161,10 @@ Module ownership:
 | `telemetry.rs` | Reverse calls, DTO conversion, topology semantics |
 | `api.rs` | Axum routes, health/readiness, JSON error envelope |
 
-Read the Chinese source walkthrough at `docs/gateway-code.zh-CN.md` for a detailed function-level explanation. The English operational guide is `crates/nexustier-gateway/README.md`.
+Read `docs/usage-guide.zh-CN.md` first for the current task-oriented user path and
+`docs/deployment-guide.zh-CN.md` for production operations. The detailed source
+walkthrough is `docs/gateway-code.zh-CN.md`; the English operational guide is
+`crates/nexustier-gateway/README.md`.
 
 ## 7. Important Internal Contracts
 
@@ -290,26 +301,39 @@ The release build and real process smoke test were also verified. Smoke-test exp
 - `/v1/topology`: an empty `machines` array.
 - SIGINT: logs shutdown and returns to the shell.
 
-## 11. Container Verification Status
+## 11. Container Publication and Verification Status
 
-The Dockerfile is implemented and statically reviewed, but the development VM did not have a Docker CLI installed during the milestone. Therefore:
+The container publication path is operational and has been verified end to end:
 
-- Native debug and release builds were verified.
-- Runtime linkage was verified.
-- HTTP and graceful-shutdown smoke tests were verified natively.
-- `docker build` itself has not yet been executed in this environment.
+- GitHub Actions builds the multi-stage Dockerfile for `linux/amd64`.
+- Pushes to `main` publish `main`, `latest`, and `sha-<short-commit>` tags to
+  `ghcr.io/wuyouowo/nexustier`.
+- Version tags matching `v*.*.*` publish semantic-version tags.
+- Published manifests are signed keylessly with Cosign through GitHub OIDC.
+- Anonymous GHCR manifest retrieval has been verified.
 
-The next agent with a container runtime should run:
+The first fully successful publication after the build fixes was run
+`30452969418` for commit `fd554d8`. Run `30502517506` for documentation commit
+`77747e1` also completed successfully: build/push, Cosign signing, and summary
+publication all passed. At the time of this handoff update, `main`, `latest`, and
+`sha-77747e1` resolve to:
 
-```bash
-docker build -t nexustier-gateway:dev .
-docker run --rm \
-  -p 22020:22020/udp \
-  -p 127.0.0.1:11211:11211/tcp \
-  nexustier-gateway:dev
+```text
+sha256:56249497aabc19760dc490c078aac622cac68fede5231fe41cd9734efb6dae48
 ```
 
-Then verify `http://127.0.0.1:11211/healthz` and image health status.
+The Docker build failures and their fixes were:
+
+- Rust 1.88 was below the EasyTier/`guarden` minimum; commit `d2f326b` raised the
+  workspace MSRV and builder image to Rust 1.95.
+- `prost-wkt-types` could not find `google/protobuf/*.proto`; commit `fd554d8`
+  added `libprotobuf-dev` to the builder and documented the prerequisite.
+
+The local development VM still has no Docker CLI. Native debug/release builds,
+runtime linkage, HTTP behavior, graceful shutdown, CI image construction,
+registry publication, signing, and anonymous manifest access are verified. A
+runtime smoke test of the pulled image on a separate Docker-capable host remains
+a useful deployment check, not a blocker in the publication pipeline.
 
 ## 12. Completed Milestones
 
@@ -322,6 +346,13 @@ Notable history:
 | `4c67e14` | Session pool and telemetry foundation |
 | `fbc1a9d` | Complete gateway, API, tests, Dockerfile, and docs |
 | `6824e59` | Chinese operations and source documentation |
+| `cc9c9da` | Initial English agent engineering handoff |
+| `f75bb2a` | Current production deployment guide and stop-signal hardening |
+| `4865a70` | Initial container publication workflow |
+| `5be6ec6` | GHCR publication metadata, signing, and documentation |
+| `d2f326b` | Rust MSRV and Docker builder raised to 1.95 |
+| `fd554d8` | Standard Protobuf definitions added; first successful GHCR publication |
+| `77747e1` | Task-oriented Chinese usage guide and latest verified publication |
 
 Use `git log --oneline --decorate` for the handoff document's own commit and any newer work.
 
@@ -395,10 +426,17 @@ Design requirements for that slice:
 For a new agent:
 
 1. Read this document.
-2. Read `README.md` and `crates/nexustier-gateway/README.md`.
-3. Read the source files in the order listed in Section 6.
-4. Run `git status --short` and inspect recent history.
-5. Confirm `protoc --version`.
-6. Run the locked test and Clippy commands.
-7. Choose one small next module; do not start Go, database, Redis, and frontend work simultaneously.
-8. Update this handoff when architecture, verified commands, or milestone status changes.
+2. Read `README.md`, `docs/usage-guide.zh-CN.md`, and
+  `crates/nexustier-gateway/README.md`.
+3. Read `docs/deployment-guide.zh-CN.md` before changing packaging, ports,
+  shutdown, or security defaults.
+4. Read the source files in the order listed in Section 6.
+5. Run `git status --short` and inspect recent history.
+6. Confirm Rust 1.95 or newer, `protoc`, and the standard Protobuf definitions.
+7. Run the locked test and Clippy commands.
+8. Check the latest `Build and publish container image` run after changes to
+  `main`; a successful push also updates and signs GHCR tags.
+9. Choose one small next module; do not start Go, database, Redis, and frontend
+  work simultaneously.
+10. Update this handoff when architecture, verified commands, publication state,
+   or milestone status changes.
