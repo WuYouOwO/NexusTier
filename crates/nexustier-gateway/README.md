@@ -28,6 +28,10 @@ cargo run --locked --package nexustier-gateway -- \
   --api-addr 127.0.0.1:11211
 ```
 
+For a task-oriented Chinese guide covering the published image, EasyTier client
+registration, telemetry queries, upgrades, and rollback, see the
+[NexusTier Gateway 0.1.0 usage guide](../../docs/usage-guide.zh-CN.md).
+
 Configure an EasyTier client to use the NexusTier endpoint as its config server. The exact EasyTier CLI flag depends on the client distribution; the endpoint is:
 
 ```text

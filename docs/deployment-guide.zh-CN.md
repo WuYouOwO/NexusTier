@@ -447,7 +447,7 @@ systemctl start nexustier-gateway.service
 
 ## 10. Docker 部署
 
-仓库根目录包含多阶段 `Dockerfile`。当前开发虚拟机没有 Docker CLI，因此以下流程尚未在该环境实构验证；首次生产使用前必须在具备 Docker 的预发布主机执行完整验收。
+仓库根目录包含多阶段 `Dockerfile`。GitHub Actions 已验证镜像构建、GHCR 推送和 Cosign 签名；生产使用前仍应在预发布主机执行本节验收。
 
 GitHub Actions 发布地址：
 
@@ -693,6 +693,7 @@ curl --fail http://127.0.0.1:11211/healthz
 ## 18. 相关文档
 
 - [中文文档索引](README.md)
+- [NexusTier Gateway 0.1.0 使用指南](usage-guide.zh-CN.md)
 - [Rust 网关使用与 API 手册](gateway-guide.zh-CN.md)
 - [Rust 网关源码架构解析](gateway-code.zh-CN.md)
 - [智能体工程交接文档](AGENT_HANDOFF.md)

@@ -301,7 +301,7 @@ CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 \
 
 | 现象 | 检查项 |
 | --- | --- |
-| `protoc` not found | 安装 `protobuf-compiler`，确认 `protoc --version` 可执行 |
+| `protoc` not found 或缺少 `google/protobuf/*.proto` | 安装 `protobuf-compiler` 和 `libprotobuf-dev`，确认 `protoc --version` 可执行 |
 | 客户端无法注册 | 检查 UDP `22020` 防火墙、NAT 映射和 EasyTier 配置服务器地址 |
 | `/readyz` 返回 `503` | 当前没有已完成心跳注册的 EasyTier Session |
 | `/v1/topology` 的实例出现 `errors` | 查看具体 `operation` 和 `message`，检查客户端实例是否仍在运行 |
