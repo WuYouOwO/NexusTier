@@ -23,7 +23,9 @@ flowchart LR
 - 通过 Controller 内部 API 检查进程、数据库和最近一次摄取状态。
 
 当前完整栈仍不包含 Web 控制台、Redis、OIDC/RBAC、IPAM、ACL、SSH 或 RDP。
-Controller 目前没有发布容器镜像，推荐从固定源码提交构建并使用 systemd 运行。
+Gateway 和 Controller 均由 GitHub Actions 构建并发布 GHCR 镜像；仓库提供包含
+PostgreSQL 的 Compose 示例。本文仍保留固定源码构建与 systemd 部署路径，便于生产
+环境独立审计和加固。
 
 ## 2. 已验证版本基线
 
@@ -62,6 +64,19 @@ Controller 目前没有发布容器镜像，推荐从固定源码提交构建并
 
 EasyTier 节点之间的数据包不经过 NexusTier，仍由 EasyTier 完成 NAT 穿透、
 加密传输和 Mesh 路由。
+
+需要快速启动完整栈时，在仓库根目录执行：
+
+```bash
+cp .env.example .env
+# 修改 .env 中的数据库密码、连接 URL 和 Gateway 准入 Token。
+docker compose -f compose.example.yaml pull
+docker compose -f compose.example.yaml up -d
+```
+
+默认使用 `ghcr.io/wuyouowo/nexustier:latest` 和
+`ghcr.io/wuyouowo/nexustier-controller:latest`。生产环境应在 `.env` 中把两个镜像
+固定到同一个版本标签或审核过的 digest，不应长期依赖 `latest`。
 
 ## 4. 主机准备
 

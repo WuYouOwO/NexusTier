@@ -100,7 +100,7 @@ Go 控制器遥测摄取基础当前可作为 WIP 完整栈运行：
 *   提供 PostgreSQL migrations 与 Machine、Instance、Node、Peer、Metric、Error 规范化模型。
 *   使用单事务、`collection_id` 和时序门控实现幂等摄取、乱序保护与局部失败保留。
 *   使用超时、抖动和禁止重叠的轮询 worker，并暴露内部健康、就绪与摄取状态 API。
-*   已通过 PostgreSQL 18 集成测试和进程级 Gateway fixture 联调；Controller 尚未发布独立镜像，当前从源码构建。
+*   已通过 PostgreSQL 18 集成测试和进程级 Gateway fixture 联调；Gateway 与 Controller 均由 GitHub Actions 构建并发布到 GHCR。
 
 当前已验证发布基线：
 
@@ -125,6 +125,17 @@ go -C controller run ./cmd/nexustier-controller
 
 该文件至少包含 `NEXUSTIER_CONTROLLER_DATABASE_URL`，应位于仓库外并保持 `0600`。
 完整配置见端到端部署指南。
+
+容器编排示例会启动 PostgreSQL、Gateway 与 Controller。先修改示范变量中的密码和准入 Token：
+
+```bash
+cp .env.example .env
+docker compose -f compose.example.yaml pull
+docker compose -f compose.example.yaml up -d
+```
+
+默认镜像分别为 `ghcr.io/wuyouowo/nexustier:latest` 与
+`ghcr.io/wuyouowo/nexustier-controller:latest`。发布版本时，建议在 `.env` 中将两者固定为相同的版本标签；Gateway UDP 端口公开，两个 HTTP 运维 API 仅绑定宿主机回环地址。
 
 中文文档：
 

@@ -58,7 +58,7 @@ flowchart LR
     ET -. Encrypted mesh data plane .-> PEERS[Other EasyTier peers]
 ```
 
-The Rust gateway and Go/PostgreSQL telemetry ingestion foundation exist today. Redis integration and the Vue application have not been created. The Go controller is source-level WIP and has no stable image or production deployment bundle yet.
+The Rust gateway and Go/PostgreSQL telemetry ingestion foundation exist today. Both application images are built and published by GitHub Actions, and the repository includes a PostgreSQL/Gateway/Controller Compose example. Redis integration and the Vue application have not been created.
 
 ## 4. Critical EasyTier Protocol Facts
 
@@ -160,14 +160,17 @@ Controller HTTP endpoints:
 ├── .github/
 │   └── workflows/
 │       └── docker-publish.yml
+├── .env.example
 ├── Cargo.toml
 ├── Cargo.lock
+├── compose.example.yaml
 ├── Dockerfile
 ├── README.md
 ├── contracts/
 │   ├── topology-v1.schema.json
 │   └── fixtures/topology-v1.json
 ├── controller/
+│   ├── Dockerfile
 │   ├── cmd/nexustier-controller/main.go
 │   ├── internal/{api,config,database,gatewayclient,ingest,poller}/
 │   ├── go.mod
@@ -469,7 +472,7 @@ These are intentional MVP limits, not hidden bugs:
 - The HTTP API has no authentication.
 - Controller metric samples have no retention, partitioning, or compaction policy yet.
 - Controller has no public topology query API yet.
-- Controller has no stable image, Compose stack, systemd unit, or HA design.
+- The Compose example is single-host only; there is no multi-controller HA design.
 - There is no Redis integration.
 - There is no Vue frontend.
 - IPAM, ACL compilation, SSO, SSH, and RDP features are not implemented.
@@ -484,7 +487,7 @@ The next slice should make persisted telemetry operable before adding Redis or a
 1. Add metric retention and PostgreSQL partitioning/compaction policy.
 2. Add read-only controller models and APIs for current machines, instances, links, collection freshness, and errors.
 3. Add pagination, stable ordering, filtering, and API contract tests.
-4. Add a development Compose stack and controller container only after the runtime/config contract settles.
+4. Harden and smoke-test the existing Compose stack on a Docker-capable host as the runtime contract evolves.
 5. Add Redis publication after durable reads and retention are correct.
 
 Do not start Redis, WebSocket, Vue, IPAM, and ACL work simultaneously. The next concrete deliverable should be retention plus a minimal current-topology read API with PostgreSQL integration tests.

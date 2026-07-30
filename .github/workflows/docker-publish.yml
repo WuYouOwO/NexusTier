@@ -88,12 +88,26 @@ jobs:
           go test ./internal/ingest -count=1
 
   build-pr:
-    name: Build gateway image for pull request
+    name: Build ${{ matrix.component }} image for pull request
     if: github.event_name == 'pull_request'
     needs: quality
     runs-on: ubuntu-latest
     permissions:
       contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - component: gateway
+            dockerfile: ./Dockerfile
+            image-suffix: ""
+            title: NexusTier Gateway
+            description: Native EasyTier protocol gateway for NexusTier
+          - component: controller
+            dockerfile: ./controller/Dockerfile
+            image-suffix: -controller
+            title: NexusTier Controller
+            description: Telemetry ingestion controller for NexusTier
 
     steps:
       - name: Checkout repository
@@ -111,28 +125,28 @@ jobs:
         id: meta
         uses: docker/metadata-action@96383f45573cb7f253c731d3b3ab81c87ef81934 # v5.0.0
         with:
-          images: ${{ env.REGISTRY }}/${{ steps.image.outputs.name }}
+          images: ${{ env.REGISTRY }}/${{ steps.image.outputs.name }}${{ matrix.image-suffix }}
           tags: type=ref,event=pr
           labels: |
-            org.opencontainers.image.title=NexusTier Gateway
-            org.opencontainers.image.description=Native EasyTier protocol gateway for NexusTier
+            org.opencontainers.image.title=${{ matrix.title }}
+            org.opencontainers.image.description=${{ matrix.description }}
             org.opencontainers.image.licenses=AGPL-3.0-only
 
       - name: Build image
         uses: docker/build-push-action@0565240e2d4ab88bba5387d719585280857ece09 # v5.0.0
         with:
           context: .
-          file: ./Dockerfile
+          file: ${{ matrix.dockerfile }}
           platforms: linux/amd64
           pull: true
           push: false
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha,scope=nexustier-gateway
-          cache-to: type=gha,mode=max,scope=nexustier-gateway
+          cache-from: type=gha,scope=nexustier-${{ matrix.component }}
+          cache-to: type=gha,mode=max,scope=nexustier-${{ matrix.component }}
 
   publish:
-    name: Build and publish gateway image
+    name: Build and publish ${{ matrix.component }} image
     if: github.event_name != 'pull_request'
     needs: quality
     runs-on: ubuntu-latest
@@ -140,6 +154,20 @@ jobs:
       contents: read
       packages: write
       id-token: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - component: gateway
+            dockerfile: ./Dockerfile
+            image-suffix: ""
+            title: NexusTier Gateway
+            description: Native EasyTier protocol gateway for NexusTier
+          - component: controller
+            dockerfile: ./controller/Dockerfile
+            image-suffix: -controller
+            title: NexusTier Controller
+            description: Telemetry ingestion controller for NexusTier
 
     steps:
       - name: Checkout repository
@@ -169,7 +197,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@96383f45573cb7f253c731d3b3ab81c87ef81934 # v5.0.0
         with:
-          images: ${{ env.REGISTRY }}/${{ steps.image.outputs.name }}
+          images: ${{ env.REGISTRY }}/${{ steps.image.outputs.name }}${{ matrix.image-suffix }}
           tags: |
             type=ref,event=branch
             type=ref,event=pr
@@ -178,8 +206,8 @@ jobs:
             type=sha,format=short
             type=raw,value=latest,enable=${{ github.ref == format('refs/heads/{0}', github.event.repository.default_branch) }}
           labels: |
-            org.opencontainers.image.title=NexusTier Gateway
-            org.opencontainers.image.description=Native EasyTier protocol gateway for NexusTier
+            org.opencontainers.image.title=${{ matrix.title }}
+            org.opencontainers.image.description=${{ matrix.description }}
             org.opencontainers.image.licenses=AGPL-3.0-only
 
       - name: Build and publish image
@@ -187,14 +215,14 @@ jobs:
         uses: docker/build-push-action@0565240e2d4ab88bba5387d719585280857ece09 # v5.0.0
         with:
           context: .
-          file: ./Dockerfile
+          file: ${{ matrix.dockerfile }}
           platforms: linux/amd64
           pull: true
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha,scope=nexustier-gateway
-          cache-to: type=gha,mode=max,scope=nexustier-gateway
+          cache-from: type=gha,scope=nexustier-${{ matrix.component }}
+          cache-to: type=gha,mode=max,scope=nexustier-${{ matrix.component }}
 
       - name: Sign published image
         env:
@@ -206,9 +234,9 @@ jobs:
         shell: bash
         run: |
           {
-            echo "## Published container image"
+            echo "## Published ${{ matrix.title }} image"
             echo
-            echo "Registry: \`${REGISTRY}/${{ steps.image.outputs.name }}\`"
+            echo "Registry: \`${REGISTRY}/${{ steps.image.outputs.name }}${{ matrix.image-suffix }}\`"
             echo
             echo "Digest: \`${{ steps.build.outputs.digest }}\`"
             echo

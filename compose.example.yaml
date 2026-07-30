@@ -1,0 +1,73 @@
+name: nexustier
+
+services:
+  postgres:
+    image: postgres:18-bookworm
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-nexustier}
+      POSTGRES_USER: ${POSTGRES_USER:-nexustier}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+    volumes:
+      - postgres-data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - control-plane
+
+  gateway:
+    image: ${NEXUSTIER_GATEWAY_IMAGE:-ghcr.io/wuyouowo/nexustier:latest}
+    restart: unless-stopped
+    environment:
+      NEXUSTIER_GATEWAY_LISTEN_ADDR: 0.0.0.0
+      NEXUSTIER_GATEWAY_LISTEN_PORT: 22020
+      NEXUSTIER_GATEWAY_ADMISSION_TOKEN: ${NEXUSTIER_GATEWAY_ADMISSION_TOKEN:?set NEXUSTIER_GATEWAY_ADMISSION_TOKEN in .env}
+      NEXUSTIER_GATEWAY_API_ADDR: 0.0.0.0:11211
+      NEXUSTIER_GATEWAY_RPC_TIMEOUT_MS: ${NEXUSTIER_GATEWAY_RPC_TIMEOUT_MS:-5000}
+      NEXUSTIER_GATEWAY_COLLECTION_TIMEOUT_MS: ${NEXUSTIER_GATEWAY_COLLECTION_TIMEOUT_MS:-15000}
+      NEXUSTIER_GATEWAY_MACHINE_CONCURRENCY: ${NEXUSTIER_GATEWAY_MACHINE_CONCURRENCY:-8}
+      NEXUSTIER_GATEWAY_SNAPSHOT_TTL_MS: ${NEXUSTIER_GATEWAY_SNAPSHOT_TTL_MS:-1000}
+      RUST_LOG: ${RUST_LOG:-info}
+    ports:
+      - "${NEXUSTIER_GATEWAY_LISTEN_PORT:-22020}:22020/udp"
+      - "${NEXUSTIER_GATEWAY_API_BIND:-127.0.0.1}:11211:11211/tcp"
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - control-plane
+
+  controller:
+    image: ${NEXUSTIER_CONTROLLER_IMAGE:-ghcr.io/wuyouowo/nexustier-controller:latest}
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      gateway:
+        condition: service_healthy
+    environment:
+      NEXUSTIER_CONTROLLER_DATABASE_URL: ${NEXUSTIER_CONTROLLER_DATABASE_URL:?set NEXUSTIER_CONTROLLER_DATABASE_URL in .env}
+      NEXUSTIER_CONTROLLER_GATEWAY_URL: http://gateway:11211
+      NEXUSTIER_CONTROLLER_LISTEN_ADDR: 0.0.0.0:8080
+      NEXUSTIER_CONTROLLER_POLL_INTERVAL: ${NEXUSTIER_CONTROLLER_POLL_INTERVAL:-15s}
+      NEXUSTIER_CONTROLLER_POLL_JITTER: ${NEXUSTIER_CONTROLLER_POLL_JITTER:-3s}
+      NEXUSTIER_CONTROLLER_REQUEST_TIMEOUT: ${NEXUSTIER_CONTROLLER_REQUEST_TIMEOUT:-20s}
+      NEXUSTIER_CONTROLLER_SHUTDOWN_TIMEOUT: ${NEXUSTIER_CONTROLLER_SHUTDOWN_TIMEOUT:-10s}
+    ports:
+      - "${NEXUSTIER_CONTROLLER_API_BIND:-127.0.0.1}:8080:8080/tcp"
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - control-plane
+
+volumes:
+  postgres-data:
+
+networks:
+  control-plane:
+    driver: bridge

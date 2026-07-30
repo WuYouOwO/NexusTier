@@ -4,8 +4,8 @@
 Rust Gateway 的 `nexustier.topology.v1` 契约，在一个 PostgreSQL 事务中
 更新当前拓扑、追加指标样本并记录采集错误。
 
-该模块尚未发布稳定镜像，也不提供公开认证 API、Redis、WebSocket、IPAM
-或 ACL。当前 API 只用于进程、数据库和摄取状态检查。
+该模块通过 GitHub Actions 构建并发布 GHCR 镜像，但当前 API 仍只用于进程、
+数据库和摄取状态检查，不提供公开认证 API、Redis、WebSocket、IPAM 或 ACL。
 
 完整安装 Gateway、Controller 和 PostgreSQL 请使用
 [当前版本端到端部署指南](../docs/current-deployment-guide.zh-CN.md)；接入节点、
@@ -58,8 +58,9 @@ go -C controller run ./cmd/nexustier-controller
 访问策略，不要提交连接 URL 或密码。开发环境文件应放在仓库外并保持 `0600`；
 至少设置数据库 URL 和 Gateway URL。
 
-Controller 当前没有容器镜像。生产样例使用固定源码提交构建二进制并通过 systemd
-运行，具体命令和加固单元见端到端部署指南。
+Controller 镜像发布到 `ghcr.io/wuyouowo/nexustier-controller`。仓库根目录的
+`compose.example.yaml` 可同时启动 PostgreSQL、Gateway 和 Controller；固定源码构建
+二进制并通过 systemd 运行的生产路径仍见端到端部署指南。
 
 ## API
 
@@ -113,6 +114,6 @@ unset NEXUSTIER_TEST_DATABASE_URL TEST_DB_PASSWORD
 - 没有面向控制台的机器、拓扑和时间序列查询 API。
 - 没有设备级准入、OIDC、RBAC 或 API 认证。
 - 没有 Redis 发布、多控制器协调或高可用部署定义。
-- 没有 Controller 容器镜像、Compose 或 systemd 发布单元。
+- Compose 示例适合单机部署和验收，当前没有多控制器 HA 编排定义。
 
 源码结构与关键事务语义见 [控制器源码架构解析](../docs/controller-code.zh-CN.md)。
