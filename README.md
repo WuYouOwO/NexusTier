@@ -5,7 +5,6 @@
 
 [![GitHub License](https://img.shields.io/github/license/WuYouOwO/NexusTier?style=flat-square)](LICENSE)
 [![EasyTier Core](https://img.shields.io/badge/EasyTier-v2.6.4-blue?style=flat-square)](https://github.com/EasyTier/EasyTier)
-[![Platform](https://img.shields.io/badge/Platform-Linux%20%7C%20Windows%20%7C%20macOS-orange?style=flat-square)](#)
 
 ---
 
