@@ -2,7 +2,7 @@
 
 本文只讲当前 Gateway 的镜像拉取、服务启动、EasyTier 客户端接入、实时遥测、升级和回滚。需要部署 Controller 和 PostgreSQL 时，请直接使用[当前版本端到端部署指南](current-deployment-guide.zh-CN.md)；面向普通使用者的完整操作流程见[当前版本用户教程](current-usage-guide.zh-CN.md)。
 
-> 本文固定到已验证提交 `654c70f`。对应镜像已经包含安全心跳、可选共享 Token 校验、topology v1 契约、单飞采集和短期缓存。
+> 本文固定到已验证提交 `302df2f`。对应镜像已经包含安全心跳、可选共享 Token 校验、topology v1 契约、单飞采集和短期缓存。
 
 更完整的生产主机、安全加固、systemd、防火墙和 NAT 配置参见[生产部署指南](deployment-guide.zh-CN.md)；所有 API 字段及 JSON 示例参见[Rust 网关使用与部署手册](gateway-guide.zh-CN.md)。
 
@@ -11,11 +11,11 @@
 | 项目 | 当前值 |
 | --- | --- |
 | NexusTier Gateway | `0.1.0` |
-| 源码提交 | `654c70fbb70289c5313f7685abff72a59b3c9f7b` |
+| 源码提交 | `302df2f429c26a3fefd12a233d4296a7a042dc08` |
 | EasyTier 兼容基线 | `v2.6.4` |
 | 容器仓库 | `ghcr.io/wuyouowo/nexustier` |
-| 固定镜像标签 | `sha-654c70f` |
-| 发布镜像 digest | `sha256:fe7dbc15f1b96955fac429f3e3825c2f71f57aacbf4e415c2b4a8c7cbb4b7028` |
+| 固定镜像标签 | `sha-302df2f` |
+| 发布镜像 digest | `sha256:35ac975021ee951e1b9befaabb71d29adf566ba500b064f15fcf0879363cb3c0` |
 | EasyTier 控制通道 | `22020/UDP` |
 | 本地只读 API | `127.0.0.1:11211/TCP` |
 
@@ -30,8 +30,9 @@
 
 当前版本尚未实现：
 
-- Gateway 镜像不包含 Go Controller；Controller 当前从同一源码提交构建。
-- Web 控制台和 Redis。
+- Gateway 镜像不包含 Go Controller；持久化拓扑、指标保留和内嵌只读控制台由独立的
+  `ghcr.io/wuyouowo/nexustier-controller` 镜像提供。
+- Redis 与跨副本会话同步。
 - 用户登录、RBAC、OIDC、IPAM 和 ACL 策略下发。
 - 通过网关创建或修改 EasyTier 网络实例。
 - HTTP API 身份认证。
@@ -56,14 +57,14 @@
 直接使用当前稳定发布：
 
 ```bash
-docker pull ghcr.io/wuyouowo/nexustier:sha-654c70f
+docker pull ghcr.io/wuyouowo/nexustier:sha-302df2f
 ```
 
 需要完全固定构建产物时使用 digest：
 
 ```bash
 docker pull \
-  ghcr.io/wuyouowo/nexustier@sha256:fe7dbc15f1b96955fac429f3e3825c2f71f57aacbf4e415c2b4a8c7cbb4b7028
+  ghcr.io/wuyouowo/nexustier@sha256:35ac975021ee951e1b9befaabb71d29adf566ba500b064f15fcf0879363cb3c0
 ```
 
 `latest` 跟随 `main` 更新，适合体验，不建议作为无人值守生产部署的唯一版本约束。
@@ -75,7 +76,7 @@ cosign verify \
   --certificate-identity \
   'https://github.com/WuYouOwO/NexusTier/.github/workflows/docker-publish.yml@refs/heads/main' \
   --certificate-oidc-issuer 'https://token.actions.githubusercontent.com' \
-  'ghcr.io/wuyouowo/nexustier@sha256:fe7dbc15f1b96955fac429f3e3825c2f71f57aacbf4e415c2b4a8c7cbb4b7028'
+  'ghcr.io/wuyouowo/nexustier@sha256:35ac975021ee951e1b9befaabb71d29adf566ba500b064f15fcf0879363cb3c0'
 ```
 
 ### 2.3 启动容器
@@ -101,7 +102,7 @@ docker run -d \
   --env-file ./gateway.env \
   -p 22020:22020/udp \
   -p 127.0.0.1:11211:11211/tcp \
-  ghcr.io/wuyouowo/nexustier@sha256:fe7dbc15f1b96955fac429f3e3825c2f71f57aacbf4e415c2b4a8c7cbb4b7028
+  ghcr.io/wuyouowo/nexustier@sha256:35ac975021ee951e1b9befaabb71d29adf566ba500b064f15fcf0879363cb3c0
 ```
 
 镜像使用 UID `10001` 的非 root 用户，不创建 TUN 设备，也不需要 `NET_ADMIN` 或其他额外 capabilities。
@@ -289,7 +290,7 @@ docker logs --follow nexustier-gateway
 ```bash
 docker run ... \
   -e NEXUSTIER_GATEWAY_RPC_TIMEOUT_MS=10000 \
-  ghcr.io/wuyouowo/nexustier:sha-654c70f
+  ghcr.io/wuyouowo/nexustier:sha-302df2f
 ```
 
 默认值为 `5000` 毫秒。该超时分别应用到每次反向 RPC，不是整份拓扑请求的总超时。

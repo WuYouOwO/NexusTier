@@ -1,29 +1,27 @@
 # NexusTier 当前版本用户教程
 
-## 1. 这份教程适合谁
+## 1. 当前版本能做什么
 
-这份教程面向已经按[当前版本端到端部署指南](current-deployment-guide.zh-CN.md)
-启动 Gateway、Controller 和 PostgreSQL，希望接入 EasyTier 节点并确认遥测工作的用户。
+本文面向已经按[Docker Compose 部署指南](current-deployment-guide.zh-CN.md)启动
+Gateway、Controller 和 PostgreSQL 的用户。当前 Phase 1B 可以：
 
-当前版本是可用的遥测底座，不是完整图形化 SD-WAN 产品。你可以：
+- 让未修改的 EasyTier v2.6.4 客户端安全注册到 Gateway。
+- 查看 Gateway 当前在线 Session 和实时反向 RPC 拓扑。
+- 在 Controller 内嵌控制台查看持久化 Machine、Instance、Node 和 Peer。
+- 通过 Controller API 按活动状态、Machine UUID 和 UUID cursor 查询当前拓扑。
+- 查看最新 collection 新鲜度、结构化错误、摄取状态和指标保留状态。
+- 自动删除过期指标样本并裁剪过期 collection 原始 payload。
 
-- 让 EasyTier v2.6.4 客户端注册到 NexusTier Gateway。
-- 查看在线机器、网络实例、Peer、路由、延迟、丢包、流量和 Stats。
-- 让 Controller 自动把拓扑和指标写入 PostgreSQL。
-- 查看最近一次摄取是否成功、失败原因和数据库中的当前状态。
-
-当前还不能：
-
-- 在 Web 页面查看拓扑。
-- 通过 NexusTier 创建 EasyTier 网络、分配 IP 或下发 ACL。
-- 使用 OIDC/RBAC 登录。
-- 通过 NexusTier 使用 SSH/RDP。
+当前仍不提供公开多租户控制台、登录、OIDC/RBAC、IPAM、ACL、网络配置下发、
+Redis、多副本 HA、历史指标图表或 PostgreSQL 分区。所有 HTTP 页面和 API 都没有
+认证，只能位于宿主机回环地址或可信私网。
 
 ## 2. 开始前确认
 
-在 NexusTier 主机上执行：
+在 NexusTier 主机的部署目录执行：
 
 ```bash
+docker compose --env-file .env -f compose.example.yaml ps
 curl --fail --silent --show-error http://127.0.0.1:11211/healthz | jq
 curl --fail --silent --show-error http://127.0.0.1:8080/healthz | jq
 curl --fail --silent --show-error http://127.0.0.1:8080/readyz | jq
@@ -31,18 +29,19 @@ curl --fail --silent --show-error http://127.0.0.1:8080/readyz | jq
 
 预期：
 
+- PostgreSQL、Gateway 和 Controller 都是 `Up`/healthy。
 - Gateway `/healthz` 返回 `status=ok`。
 - Controller `/healthz` 返回 `status=ok`。
-- Controller `/readyz` 返回 `status=ready`，表示 PostgreSQL 可用。
+- Controller `/readyz` 返回 `status=ready`，表示 PostgreSQL 可访问。
 
-Gateway `/readyz` 在还没有 EasyTier 客户端时返回 `503` 是正常状态。
+没有 EasyTier 客户端时，Gateway `/readyz` 返回 `503` 是正常状态，不表示容器不健康。
 
-你还需要准备：
+你还需要：
 
 - Gateway 可从客户端访问的 IP 或域名。
-- Gateway 环境文件中的共享准入 Token。
-- 每台客户端一个持久、唯一的 UUID Machine ID。
-- 如果要看完整拓扑，客户端还要有可运行的 EasyTier 网络配置。
+- `.env` 中的 `NEXUSTIER_GATEWAY_ADMISSION_TOKEN`。
+- 每台客户端一个长期稳定且唯一的 UUID Machine ID。
+- 若要看完整 Node/Peer/Route/Stats，客户端需要自己的 EasyTier 网络配置。
 
 生成 Machine ID：
 
@@ -50,170 +49,73 @@ Gateway `/readyz` 在还没有 EasyTier 客户端时返回 `503` 是正常状态
 uuidgen
 ```
 
-如果系统没有 `uuidgen`：
+## 3. 接入 EasyTier 客户端
 
-```bash
-python3 -c 'import uuid; print(uuid.uuid4())'
-```
+### 3.1 启动客户端
 
-## 3. 接入第一台 EasyTier 客户端
-
-### 3.1 只注册机器
-
-在客户端交互式读取 Token，避免真实值进入 shell history：
+在客户端交互读取 Token，避免真实值进入 shell history：
 
 ```bash
 read -rsp 'Gateway admission token: ' GATEWAY_TOKEN && echo
 export ET_CONFIG_SERVER="udp://gateway.example.com:22020/${GATEWAY_TOKEN}"
 export ET_MACHINE_ID='11111111-2222-3333-4444-555555555555'
 unset GATEWAY_TOKEN
-easytier-core
+easytier-core --config-file /etc/easytier/node.toml
 ```
 
-替换：
+替换 Gateway 地址和 Machine ID。同一设备重装或容器重建后应继续使用原 Machine ID；
+两台设备不能共用同一个 ID。无人值守服务应把 `ET_CONFIG_SERVER` 与
+`ET_MACHINE_ID` 放入权限为 `0600/0640` 的环境文件。
 
-- `gateway.example.com`：Gateway 的实际可达地址。
-- 交互输入：Gateway `NEXUSTIER_GATEWAY_ADMISSION_TOKEN` 的值。
-- Machine ID：为这台设备生成并永久保存的 UUID。
-
-无人值守服务应把 `ET_CONFIG_SERVER` 和 `ET_MACHINE_ID` 放入仅服务用户可读的
-`0600/0640` 环境文件，而不是写入命令行。客户端退出后清理当前 shell：
-
-```bash
-unset ET_CONFIG_SERVER ET_MACHINE_ID
-```
-
-Machine ID 是 NexusTier 当前识别设备的主键：
-
-- 同一设备重装或容器重建后应继续使用原 ID。
-- 两台设备不能共用同一个 ID。
-- 同一 ID 的新连接会替换旧连接。
-- 已建立连接不能通过后续心跳切换 Machine ID。
+NexusTier 当前不会创建 EasyTier 网络实例。仅指定配置服务器可以注册 Session，但
+若没有加载本地 EasyTier 配置，拓扑中的 `network_instances` 会为空。
 
 ### 3.2 确认安全注册
 
-在 Gateway 主机检查：
- 在浏览器中使用内嵌只读拓扑控制台。
- 通过 Controller API 查询持久化当前拓扑、collection 新鲜度和结构化错误。
- 查看摄取和指标保留是否成功。
-```
-EasyTier session registered ... secure=true
-```
-
-客户端首先建立一次明文能力探测连接，然后使用 Noise + AES-GCM 重连。能力探测
-不会进入在线 Session；只有安全连接、正确 Token 和合法 Machine ID 才能注册。
-
- 浏览器访问 `http://127.0.0.1:8080/` 可打开只读拓扑控制台。
-
 ```bash
+docker compose --env-file .env -f compose.example.yaml logs --tail 100 gateway
 curl --fail --silent --show-error http://127.0.0.1:11211/readyz | jq
 ```
 
-预期：
+日志应包含 `secure=true` 的 Session 注册记录。客户端先建立明文能力探测，再以
+Noise + AES-GCM 重连；探测连接不会加入 Session Pool。
 
- ### 7.1 使用内嵌拓扑控制台
+## 4. 查看 Gateway 实时状态
 
- 在 NexusTier 主机浏览器打开：
+Gateway API 读取内存 Session，并在查询实时拓扑时触发反向 EasyTier RPC。
 
- ```text
- http://127.0.0.1:8080/
- ```
-```json
- ### 7.2 使用持久化拓扑 API
-
- ```bash
- curl --fail --silent --show-error \
-   'http://127.0.0.1:8080/v1/topology?active=true&limit=100' | jq
- ```
-{
-  "status": "ready",
- 日常查看使用控制台和 `/v1/topology`。本节 SQL 用于审计、深度排障和验证规范化表。
-}
-```
-
-## 4. 查看在线机器
+### 4.1 在线 Session
 
 ```bash
 curl --fail --silent --show-error \
   http://127.0.0.1:11211/v1/sessions | jq
- docker compose --env-file .env -f compose.example.yaml restart gateway
- docker compose --env-file .env -f compose.example.yaml restart controller
+```
+
 重点字段：
 
 | 字段 | 含义 |
 | --- | --- |
-| `machine_id` | 客户端稳定 UUID |
- | Controller 没有成功 collection | 查看 `last_error` 和 Controller 容器日志 |
-| `remote_url` | Gateway 观察到的 UDP 地址，可能因 NAT 变化 |
- | 数据库持续增长 | 当前状态和 collection 元数据不自动删除；仍需监测容量和规划长期归档 |
- 定期备份 PostgreSQL；自动保留不能替代备份、容量监测或长期归档。
-| `last_heartbeat_at_ms` | Gateway 最近收到心跳的时间 |
-| `running_instance_ids` | 客户端当前运行的 EasyTier 网络实例 |
-| `device` | 操作系统信息 |
+| `machine_id` | 客户端稳定身份 UUID |
+| `remote_url` | Gateway 观察到的 UDP 地址，不是设备身份 |
+| `hostname` | 客户端主机名 |
+| `easytier_version` | 客户端版本 |
+| `last_heartbeat_at_ms` | 最近心跳时间 |
+| `running_instance_ids` | 当前运行的 EasyTier 网络实例 |
 
-API 不会返回共享 Token。不要把 `remote_url` 当作设备身份，NAT 重绑定时它可能改变。
+响应不会包含共享准入 Token。
 
-如果 `running_instance_ids` 为空，机器已经注册，但没有运行本地 EasyTier 网络实例。
-
-## 5. 上报完整网络拓扑
-
-在客户端同时加载 EasyTier 配置：
-
-```bash
-test -n "${ET_CONFIG_SERVER:-}" && test -n "${ET_MACHINE_ID:-}"
-easytier-core --config-file /etc/easytier/node.toml
-```
-
-如果换了新 shell，按第 3 节再次交互读取 Token 并设置两个 EasyTier 环境变量。
-
-NexusTier 当前不会替你创建这个配置。EasyTier 仍负责实际虚拟网卡、隧道、打洞、
-加密和 Mesh 路由；NexusTier 只读取控制面状态。
-
-接入第二台或更多节点时：
-
-1. 为每台设备生成不同 Machine ID。
-2. 使用相同 Gateway 地址和共享 Token。
-3. 加载属于各自节点的 EasyTier 网络配置。
-4. 确认节点本身已经能通过 EasyTier 互联。
-
-## 6. 查看实时拓扑
+### 4.2 实时拓扑
 
 ```bash
 curl --fail --silent --show-error \
   http://127.0.0.1:11211/v1/topology | jq
 ```
 
-响应层级：
+Gateway 拓扑包含 `collection_id`、采集时间、`machines[]`、`instances[]`、Node、Peer、
+Metric 和分层 `errors[]`。同一秒内的并发请求会共享单飞采集和短期缓存，因此可能返回
+相同 `collection_id`。
 
-```text
-schema_version
-collection_id
-started_at_ms / completed_at_ms
-machines[]
-  session
-  observed_at_ms
-  instances[]
-    node
-    peers[]
-    metrics[]
-    errors[]
-  errors[]
-errors[]
-```
-
-### 6.1 快速列出机器和实例
-
-```bash
-curl --fail --silent --show-error http://127.0.0.1:11211/v1/topology |
-  jq '.machines[] | {
-    machine_id: .session.machine_id,
-    hostname: .session.hostname,
-    instances: [.instances[].instance_id],
-    errors
-  }'
-```
-
-### 6.2 快速列出 Peer 链路
+快速列出 Peer：
 
 ```bash
 curl --fail --silent --show-error http://127.0.0.1:11211/v1/topology |
@@ -232,236 +134,286 @@ curl --fail --silent --show-error http://127.0.0.1:11211/v1/topology |
     }'
 ```
 
-字段解释：
+`direct=true` 表示一跳直连；中继 Peer 的延迟来自路由路径。`loss_rate=0.01` 表示约
+1% 丢包。
 
-- `direct=true`：一跳直连；RTT 来自连接统计。
-- `direct=false`：经过中继；RTT 使用路由路径延迟。
-- `path_cost=1`：通常表示直连。
-- `next_hop_peer_id`：到目标 Peer 的下一跳。
-- `loss_rate=0.01`：约 1% 丢包。
-- `rx_bytes` / `tx_bytes`：当前 Peer 连接累计字节数。
-- `tunnel_protocols`：当前连接使用的隧道协议。
+## 5. 使用内嵌拓扑控制台
 
-### 6.3 为什么两次查询的 collection ID 一样
+在 NexusTier 主机浏览器打开：
 
-Gateway 对拓扑采集实现了单飞和短期缓存：
+```text
+http://127.0.0.1:8080/
+```
 
-- 同时到达的请求共享一轮反向 RPC。
-- 默认 1 秒 TTL 内复用同一快照和 `collection_id`。
-- 一轮采集默认总期限为 15 秒。
-- 默认最多同时采集 8 台机器。
+控制台提供：
 
-这不是数据写入失败，而是避免重复压迫客户端的正常行为。
+- Machine、Instance、Peer 数量和最新 collection 新鲜度。
+- Machine 到 Peer 的直连/中继 SVG 连通图。
+- Peer RTT、丢包、RX/TX、隧道协议和最近观测时间。
+- 当前 Machine 清单、active 过滤、文本过滤和自动刷新。
+- 最新 collection 的状态和结构化错误。
 
-## 7. 查看 Controller 摄取状态
+页面由 Controller 二进制内嵌提供，不依赖 CDN、Node.js 或额外前端容器。页面和 JSON
+API 都设置 `Cache-Control: no-store`；页面还设置 CSP、禁止 frame 嵌入和 MIME 嗅探。
+
+控制台不是认证边界。远程运维必须使用第 10 节的 SSH 转发，不能把 `8080` 直接开放
+到互联网。
+
+## 6. 查询 Controller 持久化拓扑
+
+Controller `/v1/topology` 从 PostgreSQL 规范化当前状态读取，不会触发 Gateway RPC：
+
+```bash
+curl --fail --silent --show-error \
+  'http://127.0.0.1:8080/v1/topology?active=true&limit=100' | jq
+```
+
+响应结构：
+
+```text
+generated_at
+latest_collection
+latest_errors[]
+machines[]
+  device
+  network_instances[]
+    node
+    peers[]
+page.limit
+page.next_cursor
+```
+
+查询参数：
+
+| 参数 | 语义 |
+| --- | --- |
+| `active=true|false` | 同时过滤 Machine 和其 Instance 活动状态 |
+| `machine_id=<uuid>` | 精确读取一台 Machine |
+| `cursor=<uuid>` | 从该 Machine UUID 之后继续读取 |
+| `limit=1..500` | 每页 Machine 数，默认 `100` |
+
+读取指定 Machine：
+
+```bash
+curl --fail --silent --show-error \
+  'http://127.0.0.1:8080/v1/topology?machine_id=11111111-2222-3333-4444-555555555555' | jq
+```
+
+返回 `page.next_cursor` 时读取下一页：
+
+```bash
+curl --fail --silent --show-error \
+  'http://127.0.0.1:8080/v1/topology?active=true&limit=100&cursor=<next_cursor>' | jq
+```
+
+Gateway 和 Controller 都有 `/v1/topology`，但语义不同：
+
+| 地址 | 数据源 | 用途 |
+| --- | --- | --- |
+| `127.0.0.1:11211/v1/topology` | Gateway 内存 Session + 实时反向 RPC | 诊断客户端当前实时状态 |
+| `127.0.0.1:8080/v1/topology` | PostgreSQL 规范化当前表 | 控制台、稳定分页和持久化视图 |
+
+## 7. 查看摄取与保留状态
+
+### 7.1 摄取状态
 
 ```bash
 curl --fail --silent --show-error \
   http://127.0.0.1:8080/v1/telemetry/status | jq
 ```
 
-示例：
-
-```json
-{
-  "running": false,
-  "last_attempt_at": "2026-07-30T06:30:00Z",
-  "last_success_at": "2026-07-30T06:30:00Z",
-  "last_collection_id": "11111111-1111-4111-8111-111111111111",
-  "last_collection_state": "ingested",
-  "consecutive_failures": 0
-}
-```
-
-字段解释：
-
 | 字段 | 含义 |
 | --- | --- |
-| `running` | 当前是否正在执行一轮 fetch + ingest |
+| `running` | 当前是否正在执行 fetch + ingest |
 | `last_attempt_at` | 最近尝试时间 |
 | `last_success_at` | 最近成功时间 |
 | `last_collection_id` | 最近处理的 Gateway collection |
 | `last_collection_state` | `ingested` 或 `duplicate` |
 | `last_error` | 最近失败原因，成功后清空 |
-| `consecutive_failures` | 连续失败轮数，成功后归零 |
+| `consecutive_failures` | 连续失败轮数 |
 
-`duplicate` 表示相同 `collection_id` 已存在，Controller 正确跳过重复写入；它不是错误。
+`duplicate` 表示该 collection 已存在且 SHA-256 指纹一致，不是错误。
 
-## 8. 查看持久化数据
-
-Controller 当前没有面向用户的拓扑查询 API，因此使用只读 SQL 查看 PostgreSQL。
-
-进入数据库：
+### 7.2 保留状态
 
 ```bash
-read -rsp 'PostgreSQL password: ' PGPASSWORD && echo
-export PGPASSWORD PGSSLMODE=disable
-psql -h 127.0.0.1 -U nexustier -d nexustier
+curl --fail --silent --show-error \
+  http://127.0.0.1:8080/v1/retention/status | jq
 ```
 
-### 8.1 最近采集
+默认配置：
+
+- 保留时间：`720h`（30 天）。
+- 清理周期：`6h`。
+- 每批最大行数：`10000`。
+
+到期的 `metric_samples` 被分批删除，旧 collection 的 `raw_payload` 裁剪为 JSON
+`null`。collection 边界、状态、Machine/Error 计数、结构化错误和 SHA-256 指纹继续
+保留，重复 collection 冲突检测不会因 payload 裁剪失效。
+
+`last_deleted_samples` 与 `last_pruned_payloads` 是最近一轮数量；`total_*` 是当前
+Controller 进程启动后的累计数量。`last_error` 非空时检查数据库、磁盘、锁等待和日志。
+
+## 8. 使用 SQL 深度排障
+
+日常查看优先使用控制台和 Controller API。PostgreSQL 不发布宿主机端口，通过容器内
+`psql` 查询：
+
+```bash
+docker compose --env-file .env -f compose.example.yaml exec postgres \
+  psql -U nexustier -d nexustier
+```
+
+最近 collection：
 
 ```sql
-SELECT collection_id, status, machine_count, error_count, collected_at
+SELECT collection_id, status, machine_count, error_count,
+       completed_at, ingested_at, payload_pruned_at
 FROM telemetry_collection_runs
-ORDER BY collected_at DESC
+ORDER BY completed_at DESC
 LIMIT 20;
 ```
 
-`status=partial` 表示本轮存在局部错误，成功数据仍然已经保存。
-
-### 8.2 当前机器
+当前 Machine：
 
 ```sql
 SELECT machine_id, hostname, active, last_heartbeat_at,
        last_observed_at, disappeared_at
 FROM machines
-ORDER BY hostname, machine_id;
+ORDER BY machine_id;
 ```
 
-完整快照中消失的机器不会被物理删除，而是标记 `active=false` 并记录
-`disappeared_at`。
-
-### 8.3 当前实例和节点
+当前 Peer：
 
 ```sql
-SELECT i.instance_id, i.machine_id, i.active, i.last_observed_at,
-       n.peer_id, n.ipv4, n.hostname
-FROM network_instances AS i
-LEFT JOIN nodes AS n ON n.instance_id = i.instance_id
-ORDER BY i.machine_id, i.instance_id;
+SELECT source_instance_id, destination_peer_id, hostname, direct,
+       next_hop_peer_id, latency_ms, loss_rate, rx_bytes, tx_bytes,
+       tunnel_protocols, last_observed_at
+FROM peer_links_current
+ORDER BY source_instance_id, destination_peer_id;
 ```
 
-### 8.4 当前 Peer 链路
+最近结构化错误：
 
 ```sql
-SELECT p.source_instance_id, p.destination_peer_id, p.hostname, p.direct,
-       p.next_hop_peer_id, p.path_cost, p.latency_ms, p.loss_rate,
-       p.rx_bytes, p.tx_bytes, p.tunnel_protocols, p.last_observed_at
-FROM peer_links_current AS p
-JOIN network_instances AS i ON i.instance_id = p.source_instance_id
-JOIN machines AS m ON m.machine_id = i.machine_id
-WHERE i.active AND m.active
-ORDER BY p.source_instance_id, p.destination_peer_id;
-```
-
-### 8.5 局部采集错误
-
-```sql
-SELECT e.collection_id, r.collected_at, e.scope, e.machine_id, e.instance_id,
-       e.code, e.operation, e.message
+SELECT e.collection_id, r.completed_at, e.scope, e.machine_id,
+       e.instance_id, e.code, e.operation, e.message
 FROM telemetry_collection_errors AS e
-JOIN telemetry_collection_runs AS r ON r.collection_id = e.collection_id
-ORDER BY r.collected_at DESC, e.error_index;
+JOIN telemetry_collection_runs AS r USING (collection_id)
+ORDER BY r.completed_at DESC, e.error_index
+LIMIT 100;
 ```
 
-退出 `psql` 后执行 `unset PGPASSWORD PGSSLMODE`。
+退出：
 
-## 9. 如何理解局部错误
+```text
+\q
+```
 
-拓扑通常采用“部分成功”语义。能够归属到合法 Machine/Instance 的 RPC 错误不会让
-整个 HTTP 请求或数据库事务丢掉其他机器和实例的成功数据。当前
-`session_unavailable` 分支是例外：Gateway 会使用 nil Machine ID 占位，严格 Controller
-会拒绝整份 topology v1，并把它记录为 fetch/validate 失败，而不是保存 partial collection。
+## 9. 理解部分成功语义
 
-常见 `code`：
+单个 Machine、Instance 或 RPC 失败不会丢掉其他成功数据。常见错误码：
 
 | code | 含义 |
 | --- | --- |
-| `session_unavailable` | Session 快照不可用；当前严格 Controller 会拒绝包含 nil Machine ID 的整份契约 |
 | `rpc_error` | EasyTier 反向 RPC 返回错误 |
 | `rpc_timeout` | 单个 RPC 超过期限 |
-| `task_failed` | 机器采集任务异常退出 |
-| `collection_timeout` | 整轮采集达到总期限 |
+| `task_failed` | Machine 采集任务异常退出 |
+| `collection_timeout` | 整轮采集达到总期限，已完成 Machine 仍返回 |
+| `session_unavailable` | Session 快照不可用；nil Machine ID 会被严格 Controller 拒绝 |
 
-常见 `operation`：
+Controller 对局部失败采用保留语义：
 
-- `list_network_instances`
-- `show_node_info`
-- `list_peers`
-- `list_routes`
-- `get_stats`
-
-Controller 不会因为没有观测到某个字段就立即删除旧状态：
-
-- `list_routes` 失败时保留当前 Peer。
-- `list_peers` 失败时保留已有直连 RTT、丢包、流量和隧道协议。
+- `list_network_instances` 失败时不把缺失 Instance 标记 inactive。
+- `list_routes` 失败时不删除当前 Peer。
+- `list_peers` 失败时保留已有直连 RTT、丢包、流量和协议。
 - `show_node_info` 失败时保留上次 Node。
-- 顶层 collection 失败时不把缺失机器标记离线。
-- 只有完整枚举成功，消失实体才会变为 inactive。
+- 顶层 collection error 时不把缺失 Machine 标记 inactive。
 
-## 10. 日常操作
+只有完整枚举成功后，消失实体才变为 `active=false`。
 
-### 10.1 查看服务
+## 10. 日常运维
+
+### 10.1 查看服务和日志
 
 ```bash
-docker ps --filter name=nexustier-gateway
-docker logs --tail 100 nexustier-gateway
-systemctl status nexustier-controller.service --no-pager
-journalctl -u nexustier-controller.service --since '30 minutes ago' --no-pager
+docker compose --env-file .env -f compose.example.yaml ps
+docker compose --env-file .env -f compose.example.yaml logs --tail 100 gateway
+docker compose --env-file .env -f compose.example.yaml logs --tail 100 controller
+docker compose --env-file .env -f compose.example.yaml logs --tail 100 postgres
 ```
 
 ### 10.2 重启服务
 
 ```bash
-docker restart nexustier-gateway
-sudo systemctl restart nexustier-controller.service
+docker compose --env-file .env -f compose.example.yaml restart gateway
+docker compose --env-file .env -f compose.example.yaml restart controller
 ```
 
-Gateway 重启后内存 Session 暂时为空，EasyTier 客户端会自动重连。期间 Gateway
-`/readyz=503` 属于正常恢复过程。Controller 会继续轮询，并在 Gateway 恢复后重新成功。
+Gateway 重启后内存 Session Pool 暂时为空，客户端会自动重连。期间 Gateway
+`/readyz=503` 属于正常恢复过程，Controller 会在 Gateway 恢复后重新成功。
 
-### 10.3 调整轮询间隔
+### 10.3 修改配置
 
-编辑 `/etc/nexustier/controller.env`：
+编辑部署目录中的 `.env`。例如：
 
 ```dotenv
 NEXUSTIER_CONTROLLER_POLL_INTERVAL=30s
 NEXUSTIER_CONTROLLER_POLL_JITTER=5s
+NEXUSTIER_CONTROLLER_METRIC_RETENTION=2160h
 ```
 
-抖动必须大于等于 0 且小于轮询间隔。修改后：
+抖动必须小于轮询间隔。修改后重建 Controller；单纯 `restart` 不会应用新环境变量：
 
 ```bash
-sudo systemctl restart nexustier-controller.service
+docker compose --env-file .env -f compose.example.yaml config --quiet
+docker compose --env-file .env -f compose.example.yaml up -d controller
 ```
 
-### 10.4 临时提高 Gateway 日志级别
+### 10.4 远程访问
 
-把 Gateway 环境文件中的 `RUST_LOG` 改为 `debug` 并重建容器。排障后恢复 `info`，
-避免长期产生大量底层日志。
+使用 SSH 本地转发：
+
+```bash
+ssh -N \
+  -L 11211:127.0.0.1:11211 \
+  -L 8080:127.0.0.1:8080 \
+  operator@gateway.example.com
+```
+
+然后在本地浏览器打开 `http://127.0.0.1:8080/`。不要为了远程查看把 `11211` 或
+`8080` 直接绑定公网。
 
 ## 11. 常见问题
 
 | 现象 | 检查与处理 |
 | --- | --- |
 | Gateway 健康但 `/readyz=503` | 没有安全注册的 EasyTier 客户端 |
-| 客户端无法注册 | 检查 UDP 22020、DNS/NAT、Token、EasyTier v2.6.4 和 Machine ID |
-| 日志只有能力探测 | 客户端没有完成安全重连，通常是版本、网络或 Token 问题 |
-| Session 在线但实例为空 | 客户端没有加载本地 EasyTier 网络配置 |
-| 拓扑没有 Peer | 先确认 EasyTier 节点自身已经组网并能互联 |
-| 拓扑有 `errors` | 查看 `code`、`operation`、`message` 和对应客户端状态 |
+| 日志只有能力探测 | 检查客户端版本、Token、UDP 22020 和 Noise 安全重连 |
+| Session 在线但 Instance 为空 | 客户端没有加载本地 EasyTier 网络配置 |
+| Gateway 拓扑没有 Peer | 先确认 EasyTier 节点自身已经组网 |
 | Controller `/readyz=503` | PostgreSQL 不可达或数据库配置错误 |
-| Controller 没有成功 collection | 查看 `last_error` 和 systemd 日志 |
-| 状态长期为 `duplicate` | 轮询快于 Gateway TTL；不会重复写数据库，可适当增大间隔 |
-| 历史数据持续增长 | 当前没有 metric retention，必须监测数据库容量 |
-| 想远程查看 API | 使用 SSH 端口转发，不要开放公网 11211/8080 |
+| Controller 没有成功 collection | 查看 telemetry status 和 Controller 日志 |
+| 控制台没有 Machine | 检查持久化 `/v1/topology`、active 过滤和摄取状态 |
+| `/v1/topology=503` | PostgreSQL 查询失败；检查 `/readyz` 和 Controller 日志 |
+| 状态长期为 `duplicate` | 轮询快于 Gateway snapshot TTL；不会重复写数据库 |
+| retention status 有错误 | 检查数据库连接、磁盘容量、锁等待和批量大小 |
+| 数据库持续增长 | 当前状态和 collection 元数据不自动删除；规划长期归档/分区 |
 
-## 12. 安全提醒
+## 12. 安全边界
 
-- 只向 EasyTier 客户端开放 `22020/UDP`。
-- Gateway API、Controller API 和 PostgreSQL 都保持回环或可信私网访问。
-- 共享 Token 不是完整零信任身份系统，应视为敏感启动凭据。
-- 数据库密码不要写入仓库、聊天记录、命令输出或不受保护的文件。
-- 不要给 Gateway 容器添加 TUN、`NET_ADMIN`、host network 或特权模式。
-- 生产使用固定镜像 digest，并验证 Cosign 签名。
-- 定期备份 PostgreSQL；当前没有自动指标保留策略。
+- 公网只开放 UDP `22020`。
+- Gateway API、Controller API、控制台和 PostgreSQL 保持回环或可信私网访问。
+- 共享 Token 是敏感启动凭据，不是设备级身份或完整零信任授权。
+- 数据库密码、`.env` 和备份不得进入仓库、日志或聊天记录。
+- Gateway 不需要 TUN、`NET_ADMIN`、host network 或特权模式。
+- 生产使用固定镜像 digest 并验证 Cosign 签名。
+- 自动指标保留不能替代 PostgreSQL 备份、容量监测和长期归档。
 
 ## 13. 下一步阅读
 
-- [当前版本端到端部署指南](current-deployment-guide.zh-CN.md)
-- [Rust Gateway API 手册](gateway-guide.zh-CN.md)
-- [Controller 运行说明](../controller/README.md)
-- [topology v1 契约](../contracts/README.md)
-- [Gateway 源码架构](gateway-code.zh-CN.md)
-- [Controller 源码架构](controller-code.zh-CN.md)
+- [Docker Compose 部署指南](current-deployment-guide.zh-CN.md)
+- [Controller 运行与边界说明](../controller/README.md)
+- [Controller 源码架构解析](controller-code.zh-CN.md)
+- [Gateway API 手册](gateway-guide.zh-CN.md)
+- [内部 topology v1 契约](../contracts/README.md)

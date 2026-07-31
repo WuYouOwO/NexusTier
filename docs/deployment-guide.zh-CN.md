@@ -6,9 +6,9 @@
 
 本文不覆盖以下组件：
 
-- Go Controller/PostgreSQL 摄取（见[端到端部署指南](current-deployment-guide.zh-CN.md)）。
+- Go Controller、PostgreSQL 摄取、持久化拓扑 API、指标保留和内嵌只读控制台（见[端到端部署指南](current-deployment-guide.zh-CN.md)）。
 - Redis Pub/Sub。
-- Vue 3 控制台。
+- 经过认证的多租户公开 Web UI 或 REST/WebSocket API。
 - IPAM、ACL 编译、SSO、SSH 或 RDP 功能。
 
 因此，当前可部署能力是：接收原生 EasyTier v2.6.4 客户端连接、维护在线 Session、反向采集实时拓扑，并在本机提供只读 HTTP API。
@@ -18,9 +18,9 @@
 | 项目 | 当前状态 |
 | --- | --- |
 | 网关版本 | `0.1.0` |
-| 当前发布提交 | `654c70fbb70289c5313f7685abff72a59b3c9f7b` |
-| 当前固定镜像 | `ghcr.io/wuyouowo/nexustier:sha-654c70f` |
-| 当前镜像 digest | `sha256:fe7dbc15f1b96955fac429f3e3825c2f71f57aacbf4e415c2b4a8c7cbb4b7028` |
+| 当前发布提交 | `302df2f429c26a3fefd12a233d4296a7a042dc08` |
+| 当前固定镜像 | `ghcr.io/wuyouowo/nexustier:sha-302df2f` |
+| 当前镜像 digest | `sha256:35ac975021ee951e1b9befaabb71d29adf566ba500b064f15fcf0879363cb3c0` |
 | EasyTier 协议基线 | `v2.6.4` |
 | EasyTier commit | `8428a89d2dabc94c97d370ec607c6ca142473626` |
 | 原生验证环境 | Debian 13 x86-64，systemd 257 |
@@ -28,7 +28,7 @@
 | 原生 release 构建 | 已验证 |
 | HTTP 与优雅关闭烟测 | 已验证 |
 | Dockerfile | 已提供并完成静态审查 |
-| Docker 镜像构建/推送/签名 | GitHub Actions Run `30518033355` 已验证 |
+| Docker 镜像构建/推送/签名 | GitHub Actions Run `30542389054` 已验证 |
 | Kubernetes 与多副本 HA | 当前不支持 |
 
 原生构建得到的是动态链接 ELF。应在目标系统或不高于目标 glibc 版本的兼容构建环境中编译。不要把 Debian 13 上构建的二进制直接假定为兼容所有旧发行版。
@@ -112,12 +112,12 @@ cargo --version
 ```bash
 git clone https://github.com/WuYouOwO/NexusTier.git
 cd NexusTier
-git checkout 654c70fbb70289c5313f7685abff72a59b3c9f7b
+git checkout 302df2f429c26a3fefd12a233d4296a7a042dc08
 git status --short
 git log -3 --oneline --decorate
 ```
 
-当前文档固定到 `654c70f`。生产构建应使用经过审核的 commit，并保留其 SHA；升级时
+当前文档固定到 `302df2f`。生产构建应使用经过审核的 commit，并保留其 SHA；升级时
 显式替换为新的审核提交，不要在部署过程中自动跟随未知的远端最新提交。
 
 ### 5.3 执行质量检查
@@ -481,9 +481,9 @@ ghcr.io/wuyouowo/nexustier
 拉取当前固定镜像：
 
 ```bash
-docker pull ghcr.io/wuyouowo/nexustier:sha-654c70f
+docker pull ghcr.io/wuyouowo/nexustier:sha-302df2f
 docker pull \
-  ghcr.io/wuyouowo/nexustier@sha256:fe7dbc15f1b96955fac429f3e3825c2f71f57aacbf4e415c2b4a8c7cbb4b7028
+  ghcr.io/wuyouowo/nexustier@sha256:35ac975021ee951e1b9befaabb71d29adf566ba500b064f15fcf0879363cb3c0
 ```
 
 安装 Cosign 后验证发布者身份：
@@ -493,7 +493,7 @@ cosign verify \
   --certificate-identity \
   'https://github.com/WuYouOwO/NexusTier/.github/workflows/docker-publish.yml@refs/heads/main' \
   --certificate-oidc-issuer 'https://token.actions.githubusercontent.com' \
-  'ghcr.io/wuyouowo/nexustier@sha256:fe7dbc15f1b96955fac429f3e3825c2f71f57aacbf4e415c2b4a8c7cbb4b7028'
+  'ghcr.io/wuyouowo/nexustier@sha256:35ac975021ee951e1b9befaabb71d29adf566ba500b064f15fcf0879363cb3c0'
 ```
 
 ### 10.1 构建镜像
@@ -530,7 +530,7 @@ sudo docker run -d \
   --env-file /etc/nexustier/gateway.env \
   -p 22020:22020/udp \
   -p 127.0.0.1:11211:11211/tcp \
-  ghcr.io/wuyouowo/nexustier@sha256:fe7dbc15f1b96955fac429f3e3825c2f71f57aacbf4e415c2b4a8c7cbb4b7028
+  ghcr.io/wuyouowo/nexustier@sha256:35ac975021ee951e1b9befaabb71d29adf566ba500b064f15fcf0879363cb3c0
 ```
 
 镜像内 API 绑定 `0.0.0.0:11211`，但端口发布只绑定宿主机 `127.0.0.1`。Dockerfile 声明 `STOPSIGNAL SIGINT`，`docker stop` 会进入网关优雅关闭流程。
@@ -727,7 +727,7 @@ curl --fail http://127.0.0.1:11211/healthz
 - [Gateway 当前版本专项使用指南](usage-guide.zh-CN.md)
 - [Rust 网关使用与 API 手册](gateway-guide.zh-CN.md)
 - [Rust 网关源码架构解析](gateway-code.zh-CN.md)
-- [Go 控制器 WIP 运行说明](../controller/README.md)
+- [Go 控制器运行与边界说明](../controller/README.md)
 - [Go 控制器源码架构解析](controller-code.zh-CN.md)
 - [智能体工程交接文档](AGENT_HANDOFF.md)
 - [英文网关说明](../crates/nexustier-gateway/README.md)

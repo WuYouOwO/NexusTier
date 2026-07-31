@@ -5,7 +5,9 @@
 本阶段交付“可信、可界定、可持久化的遥测摄取基础”，把当前 Rust
 EasyTier 协议网关扩展为 Go 控制器可以稳定依赖的内部数据源。
 
-本计划已在提交 `654c70f` 完成。当前部署和使用请转到：
+本计划（Phase 1A）已在提交 `654c70f` 完成。后续 Phase 1B 的持久化拓扑查询 API、
+指标保留和内嵌只读控制台已在提交 `302df2f` 完成，实现说明见
+[Go Controller 源码架构解析](controller-code.zh-CN.md)。当前部署和使用请转到：
 
 - [当前版本端到端部署指南](current-deployment-guide.zh-CN.md)
 - [当前版本用户教程](current-usage-guide.zh-CN.md)

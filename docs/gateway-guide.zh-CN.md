@@ -287,7 +287,7 @@ API 当前无认证层，只允许部署在回环地址或可信私有网络。�
 构建镜像：
 
 ```bash
-docker build -t nexustier-gateway:sha-654c70f .
+docker build -t nexustier-gateway:sha-302df2f .
 ```
 
 运行镜像：
@@ -297,7 +297,7 @@ docker run --rm \
   --name nexustier-gateway \
   -p 22020:22020/udp \
   -p 127.0.0.1:11211:11211/tcp \
-  nexustier-gateway:sha-654c70f
+  nexustier-gateway:sha-302df2f
 ```
 
 镜像特性：
@@ -335,7 +335,7 @@ CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 \
 
 - HTTP API 不得直接暴露到互联网。
 - 首个安全心跳固定当前连接的 Machine ID，后续心跳不能切换身份。
-- 可选共享 Token 只适合作为 WIP 阶段的启动准入控制；完整设备授权仍由后续 Go 控制器和 OIDC 入网流程负责。
+- 可选共享 Token 只是启动阶段的准入控制，不是设备级身份；完整设备授权仍由后续认证与 OIDC 入网流程负责。
 - 网关响应不返回心跳中的用户令牌。
 - 安全配置通道保护 EasyTier WebClient RPC 连接，但不替代 Go API 的网络隔离。
 - EasyTier 数据面使用自己的加密与路由机制，网关不接触业务数据包。

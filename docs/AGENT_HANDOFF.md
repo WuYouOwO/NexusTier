@@ -7,14 +7,14 @@ This document is the engineering handoff for an AI agent or developer continuing
 - Repository: `https://github.com/WuYouOwO/NexusTier`
 - Default branch: `main`
 - License: GNU AGPLv3 (`AGPL-3.0-only` in Cargo metadata)
-- Current implemented components: Rust native EasyTier gateway and Go telemetry controller foundation (WIP)
+- Current implemented components: Rust EasyTier gateway, Go/PostgreSQL telemetry controller, persistent topology API, metric retention, and embedded read-only console
 - Gateway package: `nexustier-gateway 0.1.0`
 - Current workspace languages: Rust 2024 edition and Go 1.25
 - Declared Rust MSRV: `1.95`
-- Baseline HEAD for this handoff update: `654c70f`
-- Latest implemented telemetry-controller milestone: `654c70f`
+- Baseline HEAD for this handoff update: `302df2f`
+- Latest implemented telemetry-controller milestone: `302df2f` (Phase 1B)
 - First complete gateway milestone: `fbc1a9d`
-- Latest verified container workflow run: `30518033355` (successful)
+- Latest verified container workflow run: `30542389054` (successful)
 
 Always run `git status --short` and inspect the latest commits before editing. Other agents or the user may commit while work is in progress. Do not rewrite or revert changes you did not create.
 
@@ -52,13 +52,13 @@ flowchart LR
     ET[Unmodified easytier-core] <-->|Native WebClient protocol<br/>UDP 22020| GW[Rust protocol gateway]
     GW -->|Private read API<br/>HTTP 11211| GO[Go controller]
     GO --> PG[(PostgreSQL)]
+    UI[Embedded read-only topology console] -->|Same-origin HTTP 8080| GO
     GO <--> REDIS[(Redis Pub/Sub)]
-    UI[Vue 3 console] <-->|REST / WebSocket| GO
 
     ET -. Encrypted mesh data plane .-> PEERS[Other EasyTier peers]
 ```
 
-The Rust gateway and Go/PostgreSQL telemetry ingestion foundation exist today. Both application images are built and published by GitHub Actions, and the repository includes a PostgreSQL/Gateway/Controller Compose example. Redis integration and the Vue application have not been created.
+The Rust gateway and Go/PostgreSQL telemetry controller exist today. The controller includes a persistent current-topology API, bounded metric/raw-payload retention, and an embedded responsive console. Both application images are published by GitHub Actions, and the repository includes a PostgreSQL/Gateway/Controller Compose example. Redis, authenticated multi-tenant APIs, IPAM, and policy distribution have not been created.
 
 ## 4. Critical EasyTier Protocol Facts
 
@@ -94,7 +94,7 @@ The gateway currently provides:
 - Native EasyTier UDP listener, default `0.0.0.0:22020`.
 - Noise plus AES-GCM secure configuration channel.
 - Plaintext feature probes cannot register a heartbeat session.
-- Optional shared heartbeat admission token for the controller-foundation WIP.
+- Optional shared heartbeat admission token; this is a bootstrap control rather than device identity.
 - Machine ID is immutable after the first accepted heartbeat on a connection.
 - Heartbeat validation requiring a Machine ID.
 - In-memory sessions indexed by EasyTier Machine ID.
@@ -114,7 +114,7 @@ The gateway currently provides:
 - Automated GHCR publication and keyless Cosign signing on pushes to `main` and version tags.
 - A required Rust and Go quality job before every container build: fmt, locked Rust tests, strict Clippy, Go tests/vet, PostgreSQL integration tests, and topology contract checks.
 
-## 5.1 Implemented Controller WIP
+## 5.1 Implemented Controller Phase 1B
 
 The Go controller currently provides:
 
@@ -130,6 +130,11 @@ The Go controller currently provides:
 - Inactive/disappeared state for entities absent from complete snapshots.
 - A sequential polling worker with timeout, jitter, and no overlap.
 - Internal `/healthz`, `/readyz`, and `/v1/telemetry/status` endpoints.
+- Persistent `/v1/topology` with active/machine filters, stable UUID cursor pagination, collection freshness, and structured errors.
+- Embedded same-origin topology console at `/`, with no CDN or separate frontend runtime.
+- Configurable batched retention for metric samples and collection raw payloads.
+- SHA-256 payload fingerprints preserve collection-ID conflict detection after raw payload pruning.
+- Internal `/v1/retention/status` endpoint with recent and process-lifetime cleanup counters.
 - Graceful SIGINT/SIGTERM shutdown that waits for the worker before closing PostgreSQL.
 
 The controller API is unauthenticated and loopback-only by default. It is an internal operational API, not the future public control-plane API.
@@ -152,6 +157,9 @@ Controller HTTP endpoints:
 | `GET /healthz` | Controller process/HTTP health; does not require PostgreSQL |
 | `GET /readyz` | Returns `200` when PostgreSQL responds within one second, otherwise `503` |
 | `GET /v1/telemetry/status` | Polling attempt/success times, collection ID/state, last error, and consecutive failures |
+| `GET /v1/topology` | Persistent normalized current topology, latest collection/errors, filters, and UUID cursor pagination |
+| `GET /v1/retention/status` | Retention configuration, latest cleanup result, counters, and errors |
+| `GET /` | Embedded read-only topology console |
 
 ## 6. Source Map
 
@@ -172,7 +180,7 @@ Controller HTTP endpoints:
 ├── controller/
 │   ├── Dockerfile
 │   ├── cmd/nexustier-controller/main.go
-│   ├── internal/{api,config,database,gatewayclient,ingest,poller}/
+│   ├── internal/{api,config,database,gatewayclient,ingest,poller,readmodel,retention,webui}/
 │   ├── go.mod
 │   └── go.sum
 ├── crates/
@@ -220,7 +228,10 @@ Controller ownership:
 | `internal/database` | pgx pool and checksummed migrations |
 | `internal/ingest` | Transactional normalized PostgreSQL ingestion |
 | `internal/poller` | Sequential polling and status state |
-| `internal/api` | Internal controller health/readiness/status endpoints |
+| `internal/readmodel` | Persistent current-topology query model and stable pagination |
+| `internal/retention` | Batched metric deletion, raw-payload pruning, and cleanup status |
+| `internal/webui` | Embedded HTML/CSS/JS topology console and security headers |
+| `internal/api` | Controller health, topology, retention, status, and UI routing |
 
 Read `docs/usage-guide.zh-CN.md` first for the current task-oriented user path and
 `docs/deployment-guide.zh-CN.md` for production operations. The detailed source
@@ -289,6 +300,9 @@ The heartbeat's `user_token` is deliberately omitted from all API DTOs and logs 
 - Machine/instance disappearance is represented with `active=false`; do not destroy history.
 - Partial `list_peers` failures preserve prior direct RTT, loss, traffic, and protocols.
 - Never edit an applied migration in place; add a new file. Checksums deliberately fail startup on drift.
+- New collections store a SHA-256 of the canonical Go JSON bytes. Retention may prune only payloads with that fingerprint; older rows remain unpruned so duplicate verification can fall back to raw JSON.
+- `/v1/topology` reads normalized tables and must not decode `raw_payload` or trigger Gateway RPCs.
+- Machine pagination is fixed to ascending UUID order. Keep `active` filtering consistent between machines and instances.
 
 ## 8. Configuration and Security Defaults
 
@@ -382,19 +396,19 @@ Run these after controller changes:
 cd controller
 go test ./...
 go vet ./...
-go test -race ./internal/gatewayclient ./internal/poller ./internal/api
+go test -race ./internal/gatewayclient ./internal/poller ./internal/api ./internal/retention
 ```
 
-Database ingestion changes also require a dedicated empty PostgreSQL database:
+Database ingestion, read-model, or retention changes require a dedicated empty PostgreSQL database:
 
 ```bash
 NEXUSTIER_TEST_DATABASE_URL='<test database URL>' \
-  go test ./internal/ingest -count=1
+  go test ./internal/ingest ./internal/readmodel ./internal/retention -count=1
 ```
 
 The integration test truncates telemetry tables. Never point it at production or valuable data. PostgreSQL 18.4 was used for the local verified baseline. Verified cases include migration repeatability, duplicate collections, collection ID payload conflicts, stale snapshot deletion prevention, partial peer failure preservation, and inactive entity convergence.
 
-A real controller process smoke test with a fixture Gateway and isolated PostgreSQL also verified migrations, first polling, all three internal APIs, normalized writes, and clean SIGTERM exit.
+A real controller process smoke test with a fixture Gateway and isolated PostgreSQL verified migration 002, polling, health/readiness, telemetry status, persistent topology, retention status, embedded UI security headers, normalized writes, and clean SIGTERM exit. Browser validation covered non-empty SVG nodes/edges, click selection, hidden pagination controls, and no horizontal overflow on desktop/mobile viewports.
 
 The release build and real process smoke test were also verified. Smoke-test expectations with no clients:
 
@@ -417,13 +431,17 @@ The container publication path is operational and has been verified end to end:
 - Container builds depend on a read-only Rust/Go/PostgreSQL quality job; non-PR publication alone receives package write and OIDC signing permissions.
 
 The first fully successful publication after the build fixes was run
-`30452969418` for commit `fd554d8`. The current controller-foundation publication
-is run `30518033355` for commit `654c70f`; Rust/Go quality, PostgreSQL integration,
-build/push, Cosign signing, and summary publication all passed. The fixed tag is
-`sha-654c70f` and resolves to:
+`30452969418` for commit `fd554d8`. The current Phase 1B publication is run
+`30542389054` for commit `302df2f`; Rust/Go quality, PostgreSQL integration,
+both build/push matrix jobs, Cosign signing, and summary publication all passed.
+The fixed images resolve to:
 
 ```text
-sha256:fe7dbc15f1b96955fac429f3e3825c2f71f57aacbf4e415c2b4a8c7cbb4b7028
+ghcr.io/wuyouowo/nexustier:sha-302df2f
+sha256:35ac975021ee951e1b9befaabb71d29adf566ba500b064f15fcf0879363cb3c0
+
+ghcr.io/wuyouowo/nexustier-controller:sha-302df2f
+sha256:1d1022885b54fadb83dd60346ef3ed11f35b38ce6a18301f7e684dbc27702362
 ```
 
 The Docker build failures and their fixes were:
@@ -458,6 +476,8 @@ Notable history:
 | `fd554d8` | Standard Protobuf definitions added; first successful GHCR publication |
 | `77747e1` | Task-oriented Chinese usage guide and latest verified publication |
 | `654c70f` | Secure/bounded Gateway telemetry contract and Go/PostgreSQL controller foundation |
+| `44044b0` | Controller image, dual-image GHCR matrix, and Compose stack |
+| `302df2f` | Phase 1B persistent topology API, retention, embedded console, tests, and packaging |
 
 Use `git log --oneline --decorate` for the handoff document's own commit and any newer work.
 
@@ -469,12 +489,13 @@ These are intentional MVP limits, not hidden bugs:
 - Long-lived client connections cannot migrate between gateway replicas.
 - Redis does not synchronize sessions today.
 - Gateway topology is collected through a single-flight task and reused for the configured short TTL.
-- The HTTP API has no authentication.
-- Controller metric samples have no retention, partitioning, or compaction policy yet.
-- Controller has no public topology query API yet.
+- Gateway and Controller HTTP APIs and the embedded console have no authentication or tenant isolation.
+- Metric/raw-payload retention is implemented, but historical metric queries, charts, downsampling, PostgreSQL partitioning, and long-term aggregation are not.
+- The persistent topology API has fixed UUID ordering/cursors and does not support arbitrary sorting, full-text search, or tenant-scoped views.
 - The Compose example is single-host only; there is no multi-controller HA design.
+- Retention cleanup is idempotent across concurrent controllers but has no leader election or scheduling ownership.
 - There is no Redis integration.
-- There is no Vue frontend.
+- The embedded console is an operational read-only view, not an authenticated public product frontend.
 - IPAM, ACL compilation, SSO, SSH, and RDP features are not implemented.
 - Only EasyTier v2.6.4 is a tested protocol baseline.
 
@@ -482,15 +503,15 @@ Avoid presenting README roadmap features as implemented software.
 
 ## 14. Recommended Next Development Slice
 
-The next slice should make persisted telemetry operable before adding Redis or a frontend:
+Phase 1B is complete. The next slice should harden access and define historical telemetry before adding broad orchestration features:
 
-1. Add metric retention and PostgreSQL partitioning/compaction policy.
-2. Add read-only controller models and APIs for current machines, instances, links, collection freshness, and errors.
-3. Add pagination, stable ordering, filtering, and API contract tests.
-4. Harden and smoke-test the existing Compose stack on a Docker-capable host as the runtime contract evolves.
-5. Add Redis publication after durable reads and retention are correct.
+1. Design authentication, authorization, tenant boundaries, sessions/CSRF, and rate limits for Controller HTTP surfaces.
+2. Define a historical metric query contract, retention tiers, downsampling, and PostgreSQL partitioning before exposing charts.
+3. Add contract tests for authentication and historical queries, including pagination and resource limits.
+4. Decide whether Redis/WebSocket publication is needed after durable historical reads and access control are stable.
+5. Keep IPAM/ACL policy work separate from identity and historical telemetry implementation.
 
-Do not start Redis, WebSocket, Vue, IPAM, and ACL work simultaneously. The next concrete deliverable should be retention plus a minimal current-topology read API with PostgreSQL integration tests.
+Do not expose the current unauthenticated API/console to the internet, and do not start Redis, WebSocket, IPAM, and ACL work simultaneously.
 
 ## 15. Rules for Future Changes
 
@@ -500,6 +521,9 @@ Do not start Redis, WebSocket, Vue, IPAM, and ACL work simultaneously. The next 
 - Never expose heartbeat user tokens in API responses.
 - Preserve partial-success telemetry semantics.
 - Preserve reconnect race protection.
+- Keep Gateway live topology and Controller persistent topology as separate contracts; do not make one a transparent proxy for the other.
+- Preserve UUID cursor ordering and apply active filtering consistently to machines and instances.
+- Do not prune a collection raw payload unless its SHA-256 fingerprint is present; older rows rely on raw JSON duplicate verification.
 - Prefer existing EasyTier RPC types over reimplementing wire protocol details.
 - Keep production code free of placeholder `TODO` implementations.
 - Add focused tests for each behavior change.
@@ -522,6 +546,6 @@ For a new agent:
 7. Run the locked test and Clippy commands.
 8. Check the latest `Build and publish container image` run after changes to
   `main`; a successful push also updates and signs GHCR tags.
-9. Choose one small next module; keep retention/read API separate from Redis and frontend work.
+9. Choose one small next module; start with authentication boundaries or historical metric design, not Redis/IPAM/ACL in parallel.
 10. Update this handoff when architecture, verified commands, publication state,
    or milestone status changes.

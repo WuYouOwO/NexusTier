@@ -62,7 +62,7 @@ flowchart TD
 默认设计体现了安全边界：
 
 - EasyTier 入口绑定 `0.0.0.0:22020`，允许外部客户端接入。
-- 可选共享准入 Token 默认未配置，便于兼容开发环境；生产 WIP 部署应显式配置。
+- 可选共享准入 Token 默认未配置，便于兼容开发环境；生产部署应显式配置。
 - 管理 API 绑定 `127.0.0.1:11211`，默认不对外暴露。
 - 每个 EasyTier 反向 RPC 默认有 5 秒 deadline。
 
@@ -264,9 +264,10 @@ Axum Router 只暴露四个 GET 端点。`ApiState` 同时持有 Session Pool �
 - 不执行 IPAM、ACL 编译、SSO 准入或配置持久化。
 - 单机网关尚未通过 Redis 同步 Session；长连接本身也不能跨进程迁移。
 
-当前 Go 控制器 WIP 已完成 topology v1 定时轮询、PostgreSQL 规范化写入、
-幂等/乱序保护、局部失败保留与内部状态 API。实现说明见
-[Go 控制器源码架构解析](controller-code.zh-CN.md)。
+当前 Go Controller 已完成 topology v1 定时轮询、PostgreSQL 规范化写入、
+幂等/乱序保护、局部失败保留、持久化当前拓扑查询 API、指标与原始 payload 保留，
+以及内嵌只读拓扑控制台。实现说明见
+[Go Controller 源码架构解析](controller-code.zh-CN.md)。
 
-下一切片应实现指标保留/分区和当前拓扑只读查询 API；Redis Pub/Sub、Vue
-控制台、ACL/IPAM 配置下发仍属于后续阶段。
+下一切片应设计 Controller HTTP 面的认证/租户边界和历史指标查询契约；Redis Pub/Sub、
+多租户公开前端、ACL/IPAM 配置下发仍属于后续阶段。
