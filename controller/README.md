@@ -2,10 +2,11 @@
 
 `nexustier-controller` 是当前仓库中的 Go 控制面遥测摄取基础。它定时读取
 Rust Gateway 的 `nexustier.topology.v1` 契约，在一个 PostgreSQL 事务中
-更新当前拓扑、追加指标样本并记录采集错误。
+更新当前拓扑、追加指标样本并记录采集错误。它还从规范化表提供当前拓扑 API、内嵌
+只读控制台，并按配置清理过期指标和原始 payload。
 
-该模块通过 GitHub Actions 构建并发布 GHCR 镜像。它是内部遥测摄取服务，不是公开
-控制面 API：不提供机器/拓扑查询、认证、Redis、WebSocket、IPAM、ACL 或配置下发。
+该模块通过 GitHub Actions 构建并发布 GHCR 镜像。它提供内部只读拓扑查询，但不是
+经过认证的公开控制面 API：不提供 Redis、WebSocket、IPAM、ACL 或配置下发。
 
 完整安装 Gateway、Controller 和 PostgreSQL 请使用
 [当前版本端到端部署指南](../docs/current-deployment-guide.zh-CN.md)；接入节点、
@@ -14,8 +15,8 @@ Rust Gateway 的 `nexustier.topology.v1` 契约，在一个 PostgreSQL 事务中
 当前已验证镜像为：
 
 ```text
-ghcr.io/wuyouowo/nexustier-controller:sha-44044b0
-sha256:876b4266f4ac70c6c33e0e9e7936b6d31968b8966a89c721c511d8e9f15e3838
+ghcr.io/wuyouowo/nexustier-controller:sha-302df2f
+sha256:1d1022885b54fadb83dd60346ef3ed11f35b38ce6a18301f7e684dbc27702362
 ```
 
 ## 能力
@@ -28,6 +29,10 @@ sha256:876b4266f4ac70c6c33e0e9e7936b6d31968b8966a89c721c511d8e9f15e3838
 - 局部 RPC 失败保留上次成功字段，不把未观测误判为删除。
 - 串行轮询带独立请求超时和抖动，不会重叠执行。
 - PostgreSQL migrations 使用 advisory lock、事务和 SHA-256 checksum。
+- 当前拓扑查询按 Machine UUID 稳定分页，支持 active、machine_id、cursor 和 limit 参数。
+- 返回最新 collection 新鲜度、结构化错误，以及嵌套 Machine/Instance/Node/Peer 状态。
+- 在 `/` 内嵌响应式拓扑控制台，无 CDN、Node.js 或额外前端容器依赖。
+- 默认保留 720 小时指标和原始 payload；分批清理后仍保留 collection 元数据、错误与 SHA-256 指纹。
 - 提供 JSON 结构化日志和 SIGINT/SIGTERM 优雅关闭。
 
 ## 要求
@@ -47,6 +52,9 @@ sha256:876b4266f4ac70c6c33e0e9e7936b6d31968b8966a89c721c511d8e9f15e3838
 | `NEXUSTIER_CONTROLLER_POLL_JITTER` | `3s` | 正负随机抖动，必须小于间隔 |
 | `NEXUSTIER_CONTROLLER_REQUEST_TIMEOUT` | `20s` | 单轮拉取和写入总超时 |
 | `NEXUSTIER_CONTROLLER_SHUTDOWN_TIMEOUT` | `10s` | HTTP 和 worker 关闭期限 |
+| `NEXUSTIER_CONTROLLER_METRIC_RETENTION` | `720h` | 指标样本和 collection 原始 payload 保留时间 |
+| `NEXUSTIER_CONTROLLER_CLEANUP_INTERVAL` | `6h` | 保留清理周期 |
+| `NEXUSTIER_CONTROLLER_CLEANUP_BATCH_SIZE` | `10000` | 每批删除或裁剪的最大行数 |
 
 ## 运行
 
@@ -78,6 +86,16 @@ go -C controller run ./cmd/nexustier-controller
 | `GET /healthz` | 进程与 HTTP 服务存活，不检查数据库 |
 | `GET /readyz` | PostgreSQL 在 1 秒内可响应时返回 `200` |
 | `GET /v1/telemetry/status` | 最近尝试、成功时间、collection ID、状态和连续失败数 |
+| `GET /v1/topology` | 持久化当前拓扑、最新 collection、结构化错误和 UUID cursor 分页 |
+| `GET /v1/retention/status` | 保留周期、批量大小、最近/累计删除和裁剪状态 |
+| `GET /` | 内嵌只读拓扑控制台 |
+
+`GET /v1/topology` 查询参数：
+
+- `active=true|false`：过滤 Machine 和其 Instance 活动状态；不传时返回全部。
+- `machine_id=<uuid>`：只返回指定 Machine。
+- `cursor=<uuid>`：从该 Machine UUID 之后继续读取。
+- `limit=1..500`：每页 Machine 数，默认 `100`。
 
 API 当前没有认证。原生运行默认绑定回环地址；容器内为了私有网络访问监听所有接口，
 Compose 仅映射到宿主机 `127.0.0.1:8080`。不得直接暴露到互联网。
@@ -86,7 +104,7 @@ Compose 仅映射到宿主机 `127.0.0.1:8080`。不得直接暴露到互联网�
 
 | 表 | 用途 |
 | --- | --- |
-| `telemetry_collection_runs` | 每个 collection 的边界、状态和审计 payload |
+| `telemetry_collection_runs` | 每个 collection 的边界、状态、审计 payload、SHA-256 指纹和裁剪时间 |
 | `machines` | 当前机器状态，含 active/disappeared 时间 |
 | `network_instances` | 当前 EasyTier 实例状态 |
 | `nodes` | 每个实例当前 Node 信息 |
@@ -95,7 +113,8 @@ Compose 仅映射到宿主机 `127.0.0.1:8080`。不得直接暴露到互联网�
 | `telemetry_collection_errors` | snapshot/machine/instance 层结构化错误 |
 | `schema_migrations` | 已应用 migration 与 SHA-256 checksum |
 
-当前 raw payload 仅作为审计补充，规范化表才是查询和后续 API 的主要模型。
+raw payload 仅作为限时审计补充，规范化表是当前拓扑 API 的数据源。保留期后 raw
+payload 会被裁剪为 JSON `null`，但 collection 元数据、结构化错误和 SHA-256 指纹保留。
 
 ## 验证
 
@@ -103,7 +122,7 @@ Compose 仅映射到宿主机 `127.0.0.1:8080`。不得直接暴露到互联网�
 cd controller
 go test ./...
 go vet ./...
-go test -race ./internal/gatewayclient ./internal/poller ./internal/api
+go test -race ./internal/gatewayclient ./internal/poller ./internal/api ./internal/retention
 ```
 
 PostgreSQL 集成测试需要专用空数据库：
@@ -111,7 +130,7 @@ PostgreSQL 集成测试需要专用空数据库：
 ```bash
 read -rsp 'URL-encoded test database password: ' TEST_DB_PASSWORD && echo
 export NEXUSTIER_TEST_DATABASE_URL="postgres://nexustier:${TEST_DB_PASSWORD}@127.0.0.1:5432/nexustier_test?sslmode=disable"
-go test ./internal/ingest -count=1
+go test ./internal/ingest ./internal/readmodel ./internal/retention -count=1
 unset NEXUSTIER_TEST_DATABASE_URL TEST_DB_PASSWORD
 ```
 
@@ -120,8 +139,9 @@ unset NEXUSTIER_TEST_DATABASE_URL TEST_DB_PASSWORD
 
 ## 当前限制
 
-- 没有历史指标保留/分区策略，metric samples 会持续增长。
-- 没有面向控制台的机器、拓扑和时间序列查询 API。
+- 没有历史指标时间序列查询/图表、聚合降采样或 PostgreSQL 分区策略。
+- 当前拓扑 API 使用 UUID cursor，不提供任意排序、全文搜索或跨租户视图。
+- 内嵌控制台是单用户运维视图，不包含登录、授权或租户隔离。
 - 不创建或修改 EasyTier 网络实例，不执行 IPAM 或策略下发。
 - 没有设备级准入、OIDC、RBAC 或 API 认证。
 - 没有 Redis 发布、多控制器协调或高可用部署定义。

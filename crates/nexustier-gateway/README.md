@@ -88,16 +88,16 @@ Every image build now depends on a separate quality job that runs locked tests, 
 Current verified image baseline:
 
 ```text
-ghcr.io/wuyouowo/nexustier:sha-44044b0
-sha256:acf3a2f1bdad378928addee3c040c0ca1de0516ddebf5d8217c16d648f90e417
+ghcr.io/wuyouowo/nexustier:sha-302df2f
+sha256:35ac975021ee951e1b9befaabb71d29adf566ba500b064f15fcf0879363cb3c0
 ```
 
-GitHub Actions run `30527587634` passed Rust, Go, PostgreSQL integration, both image publications, Cosign signing, and summary steps.
+GitHub Actions run `30542389054` passed Rust, Go, PostgreSQL integration, both image publications, Cosign signing, and summary steps.
 
 Pull a published image:
 
 ```bash
-docker pull ghcr.io/wuyouowo/nexustier:sha-44044b0
+docker pull ghcr.io/wuyouowo/nexustier:sha-302df2f
 ```
 
 Build locally:

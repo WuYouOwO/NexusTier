@@ -11,7 +11,7 @@
 ## 📖 项目定位 (Project Status)
 
 **NexusTier** 的目标是成为面向 **EasyTier** 的开源零信任 SDN 控制器与 SD-WAN
-编排系统。当前仓库交付的是第一阶段的**安全接入与遥测持久化底座**，不是完整的
+编排系统。当前仓库交付的是第一阶段的**安全接入、遥测持久化与只读拓扑控制台**，不是完整的
 零信任或 SD-WAN 管理产品。
 
 架构边界是“控制面集中编排，数据面由 EasyTier Mesh 自收敛”。NexusTier 不代理
@@ -25,16 +25,19 @@ EasyTier 数据包，不替代 EasyTier 的 NAT 穿透、加密隧道、路由�
 *   **实时拓扑遥测**：反向采集 Node、Peer、Route、RTT、丢包、流量和 Stats，提供部分成功、结构化错误、单飞和有界采集。
 *   **版本化控制面契约**：Rust Gateway 生产 `nexustier.topology.v1`，Go Controller 严格校验并消费同一 Schema/fixture。
 *   **PostgreSQL 持久化**：幂等保存 Machine、Instance、Node、当前 Peer 链路、指标样本和采集错误，保护乱序和局部失败状态。
-*   **内部运维接口**：Gateway 提供会话和实时拓扑只读 API；Controller 提供健康、数据库就绪和摄取状态 API。
+*   **持久化拓扑查询**：Controller 从规范化表提供 Machine、Instance、Node、Peer、collection 新鲜度和结构化错误的稳定分页 API。
+*   **内嵌拓扑控制台**：Controller 在 `8080/` 提供响应式只读 Web UI，展示连通图、机器清单、链路指标和 collection 健康。
+*   **指标保留**：默认保留 30 天指标样本和原始 payload，后台分批清理并保留 collection 元数据、错误与 SHA-256 幂等指纹。
+*   **内部运维接口**：Gateway 提供会话和实时拓扑 API；Controller 提供健康、持久化拓扑、摄取和保留状态 API。
 *   **容器交付**：GitHub Actions 构建、签名并发布 Gateway 与 Controller 镜像；仓库提供 PostgreSQL 三服务 Compose 编排。
 
 ### 当前不提供
 
-*   Web UI、面向用户的公开 REST/WebSocket API 或 Controller 拓扑查询 API。
+*   经过认证、可直接公网暴露的多租户 Web UI 或公开 REST/WebSocket API。
 *   OIDC、RBAC、设备级身份、租户隔离或 API 认证。
 *   IPAM、网络创建、配置下发、ACL/防火墙策略编译。
 *   SSH/RDP 准入、Redis 事件发布、多 Controller 协调或高可用编排。
-*   历史指标保留、分区和自动压缩策略。
+*   历史指标查询/图表、PostgreSQL 分区和长期聚合压缩策略。
 
 当前部署和操作见
 [端到端部署指南](docs/current-deployment-guide.zh-CN.md)与
@@ -67,7 +70,8 @@ flowchart LR
     ET[未修改的 easytier-core] <-->|原生 WebClient 协议<br/>UDP 22020| GW[Rust Gateway]
     GW -->|私有只读 API<br/>HTTP 11211| CTRL[Go Controller]
     CTRL -->|TCP 5432| PG[(PostgreSQL)]
-    OPS[运维人员] -->|回环地址<br/>HTTP 11211/8080| INTERNAL[内部状态 API]
+    UI[内嵌只读拓扑控制台] -->|同源 HTTP 8080| CTRL
+    OPS[运维人员] -->|回环地址<br/>HTTP 11211/8080| INTERNAL[内部 API]
     ET -. 加密 Mesh 数据面 .-> PEERS[其他 EasyTier Peer]
 ```
 
@@ -99,18 +103,21 @@ Go 控制器遥测摄取基础可作为完整遥测链路运行：
 *   严格消费共享的 `nexustier.topology.v1` 契约。
 *   提供 PostgreSQL migrations 与 Machine、Instance、Node、Peer、Metric、Error 规范化模型。
 *   使用单事务、`collection_id` 和时序门控实现幂等摄取、乱序保护与局部失败保留。
-*   使用超时、抖动和禁止重叠的轮询 worker，并暴露内部健康、就绪与摄取状态 API。
+*   使用超时、抖动和禁止重叠的轮询 worker，并暴露健康、就绪、摄取与保留状态 API。
+*   从规范化表提供 `GET /v1/topology`，支持 active、Machine UUID、UUID cursor 和 limit 过滤。
+*   内嵌无外部运行时依赖的拓扑控制台，并对页面和 JSON API 设置 `no-store` 与安全响应头。
+*   后台分批删除过期指标并裁剪过期原始 payload，保留 collection 审计元数据和 SHA-256 冲突检测。
 *   已通过 PostgreSQL 18 集成测试和进程级 Gateway fixture 联调；Gateway 与 Controller 均由 GitHub Actions 构建并发布到 GHCR。
 
 当前已验证应用镜像基线：
 
 | 组件 | 镜像 | Digest |
 | --- | --- | --- |
-| Gateway | `ghcr.io/wuyouowo/nexustier:sha-44044b0` | `sha256:acf3a2f1bdad378928addee3c040c0ca1de0516ddebf5d8217c16d648f90e417` |
-| Controller | `ghcr.io/wuyouowo/nexustier-controller:sha-44044b0` | `sha256:876b4266f4ac70c6c33e0e9e7936b6d31968b8966a89c721c511d8e9f15e3838` |
+| Gateway | `ghcr.io/wuyouowo/nexustier:sha-302df2f` | `sha256:35ac975021ee951e1b9befaabb71d29adf566ba500b064f15fcf0879363cb3c0` |
+| Controller | `ghcr.io/wuyouowo/nexustier-controller:sha-302df2f` | `sha256:1d1022885b54fadb83dd60346ef3ed11f35b38ce6a18301f7e684dbc27702362` |
 
-该基线对应提交 `44044b026f759331bb354b7af3b4390227085a58` 和成功的 GitHub
-Actions Run `30527587634`。两个镜像均为 `linux/amd64` OCI image index，并使用
+该基线对应提交 `302df2f429c26a3fefd12a233d4296a7a042dc08` 和成功的 GitHub
+Actions Run `30542389054`。两个镜像均为 `linux/amd64` OCI image index，并使用
 GitHub OIDC + Cosign 签名。
 
 开发运行：
@@ -163,7 +170,7 @@ docker compose --env-file .env -f compose.example.yaml up -d
 ## 📅 路线图 (Roadmap)
 
 *   [x] **Phase 1A**: 原生 EasyTier 安全接入、双向遥测 RPC、版本化契约和 PostgreSQL 摄取底座。
-*   [ ] **Phase 1B**: 面向用户的只读拓扑 API、历史指标保留策略和 Web 拓扑控制台。
+*   [x] **Phase 1B**: 持久化拓扑只读 API、指标保留策略和内嵌 Web 拓扑控制台。
 *   [ ] **Phase 2**: 实现分布式 IPAM（IP 地址管理）与声明式有状态 ACL 防火墙。
 *   [ ] **Phase 3**: 推出 NexusTier 多端 GUI Agent，支持企业级 SSO 扫码入网。
 *   [ ] **Phase 4**: 实现零信任安全 SSH 终端与基于虚拟智能卡重定向的免密 RDP 连接。

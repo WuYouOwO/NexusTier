@@ -5,7 +5,8 @@ Go Controller 是严格消费者。
 
 该契约描述 Gateway 到 Controller 的内部只读快照，不是面向最终用户的公开 API，
 也不包含认证、设备注册、IPAM、ACL、网络配置下发或 EasyTier 数据面协议。当前
-Controller 只消费并持久化该契约，不提供同结构的公开查询接口。
+Controller 消费并持久化该契约，再从规范化表构建独立的 `/v1/topology` 读模型；
+Controller 响应不是 Gateway topology v1 契约的透传或兼容替代品。
 
 部署和使用入口：
 

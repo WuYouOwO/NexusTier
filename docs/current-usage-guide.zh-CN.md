@@ -93,21 +93,17 @@ Machine ID 是 NexusTier 当前识别设备的主键：
 ### 3.2 确认安全注册
 
 在 Gateway 主机检查：
-
-```bash
-docker logs --tail 100 nexustier-gateway
+ 在浏览器中使用内嵌只读拓扑控制台。
+ 通过 Controller API 查询持久化当前拓扑、collection 新鲜度和结构化错误。
+ 查看摄取和指标保留是否成功。
 ```
-
-正常日志包含：
-
-```text
 EasyTier session registered ... secure=true
 ```
 
 客户端首先建立一次明文能力探测连接，然后使用 Noise + AES-GCM 重连。能力探测
 不会进入在线 Session；只有安全连接、正确 Token 和合法 Machine ID 才能注册。
 
-查看 Gateway 就绪状态：
+ 浏览器访问 `http://127.0.0.1:8080/` 可打开只读拓扑控制台。
 
 ```bash
 curl --fail --silent --show-error http://127.0.0.1:11211/readyz | jq
@@ -115,10 +111,23 @@ curl --fail --silent --show-error http://127.0.0.1:11211/readyz | jq
 
 预期：
 
+ ### 7.1 使用内嵌拓扑控制台
+
+ 在 NexusTier 主机浏览器打开：
+
+ ```text
+ http://127.0.0.1:8080/
+ ```
 ```json
+ ### 7.2 使用持久化拓扑 API
+
+ ```bash
+ curl --fail --silent --show-error \
+   'http://127.0.0.1:8080/v1/topology?active=true&limit=100' | jq
+ ```
 {
   "status": "ready",
-  "active_sessions": 1
+ 日常查看使用控制台和 `/v1/topology`。本节 SQL 用于审计、深度排障和验证规范化表。
 }
 ```
 
@@ -127,16 +136,17 @@ curl --fail --silent --show-error http://127.0.0.1:11211/readyz | jq
 ```bash
 curl --fail --silent --show-error \
   http://127.0.0.1:11211/v1/sessions | jq
-```
-
+ docker compose --env-file .env -f compose.example.yaml restart gateway
+ docker compose --env-file .env -f compose.example.yaml restart controller
 重点字段：
 
 | 字段 | 含义 |
 | --- | --- |
 | `machine_id` | 客户端稳定 UUID |
+ | Controller 没有成功 collection | 查看 `last_error` 和 Controller 容器日志 |
 | `remote_url` | Gateway 观察到的 UDP 地址，可能因 NAT 变化 |
-| `hostname` | 客户端主机名 |
-| `easytier_version` | 客户端版本 |
+ | 数据库持续增长 | 当前状态和 collection 元数据不自动删除；仍需监测容量和规划长期归档 |
+ 定期备份 PostgreSQL；自动保留不能替代备份、容量监测或长期归档。
 | `last_heartbeat_at_ms` | Gateway 最近收到心跳的时间 |
 | `running_instance_ids` | 客户端当前运行的 EasyTier 网络实例 |
 | `device` | 操作系统信息 |

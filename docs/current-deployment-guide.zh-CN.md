@@ -10,7 +10,8 @@ flowchart LR
     ET[EasyTier v2.6.4 客户端] -->|UDP 22020| GW[Rust Gateway 容器]
     GW -->|HTTP 11211<br/>Compose 私有网络| CTRL[Go Controller 容器]
     CTRL -->|TCP 5432<br/>Compose 私有网络| PG[(PostgreSQL 18 容器)]
-    OPS[运维人员] -->|127.0.0.1:11211/8080| API[内部运维 API]
+    WEB[内嵌只读拓扑控制台] -->|同源 HTTP 8080| CTRL
+    OPS[运维人员] -->|127.0.0.1:11211/8080| API[内部 API]
     ET -. 加密 Mesh 数据面 .-> PEERS[其他 EasyTier 节点]
 ```
 
@@ -21,24 +22,26 @@ flowchart LR
 - 反向采集 Node、Peer、Route、RTT、丢包、流量和 Stats。
 - 通过 `nexustier.topology.v1` 契约把实时拓扑交给 Controller。
 - 将机器、实例、节点、当前 Peer 链路、指标和采集错误写入 PostgreSQL。
-- 通过内部 API 检查 Gateway、数据库和最近一次摄取状态。
+- 从规范化表查询持久化当前拓扑、collection 新鲜度和结构化错误。
+- 在 Controller 根路径查看内嵌响应式拓扑控制台。
+- 定期批量清理过期指标和原始 payload，同时保留审计元数据和 SHA-256 指纹。
 
-当前仍不包含 Web 控制台、Redis、OIDC/RBAC、IPAM、ACL、SSH 或 RDP。Gateway
+当前仍不包含认证/多租户公开控制台、Redis、OIDC/RBAC、IPAM、ACL、SSH 或 RDP。Gateway
 只处理 EasyTier 控制协议和遥测，不转发 EasyTier Mesh 数据面流量。
 
 ## 2. 已验证版本基线
 
 | 项目 | 当前基线 |
 | --- | --- |
-| 源码提交 | `44044b026f759331bb354b7af3b4390227085a58` |
-| Gateway 镜像 | `ghcr.io/wuyouowo/nexustier:sha-44044b0` |
-| Gateway digest | `sha256:acf3a2f1bdad378928addee3c040c0ca1de0516ddebf5d8217c16d648f90e417` |
-| Controller 镜像 | `ghcr.io/wuyouowo/nexustier-controller:sha-44044b0` |
-| Controller digest | `sha256:876b4266f4ac70c6c33e0e9e7936b6d31968b8966a89c721c511d8e9f15e3838` |
+| 源码提交 | `302df2f429c26a3fefd12a233d4296a7a042dc08` |
+| Gateway 镜像 | `ghcr.io/wuyouowo/nexustier:sha-302df2f` |
+| Gateway digest | `sha256:35ac975021ee951e1b9befaabb71d29adf566ba500b064f15fcf0879363cb3c0` |
+| Controller 镜像 | `ghcr.io/wuyouowo/nexustier-controller:sha-302df2f` |
+| Controller digest | `sha256:1d1022885b54fadb83dd60346ef3ed11f35b38ce6a18301f7e684dbc27702362` |
 | EasyTier | `v2.6.4`，commit `8428a89d2dabc94c97d370ec607c6ca142473626` |
 | PostgreSQL | `18-bookworm`；Controller 支持 PostgreSQL `14+` |
 | topology 契约 | `nexustier.topology.v1` |
-| GitHub Actions | Run `30527587634`，质量门禁、双镜像构建、推送和签名均成功 |
+| GitHub Actions | Run `30542389054`，质量门禁、双镜像构建、推送和签名均成功 |
 | 容器平台 | `linux/amd64` |
 
 本文默认固定 SHA 标签，便于同时升级 Gateway 和 Controller。要求更严格的生产环境可把
@@ -51,7 +54,7 @@ flowchart LR
 | --- | --- | --- | --- |
 | `22020/UDP` | `0.0.0.0:22020` | 按客户端来源策略开放 | EasyTier WebClient 控制通道 |
 | `11211/TCP` | `127.0.0.1:11211` | 禁止 | Gateway 只读运维 API |
-| `8080/TCP` | `127.0.0.1:8080` | 禁止 | Controller 状态 API |
+| `8080/TCP` | `127.0.0.1:8080` | 禁止 | 内嵌控制台和 Controller 只读 API |
 | `5432/TCP` | 不发布到宿主机 | 禁止 | Controller 到 PostgreSQL |
 
 Compose 创建 `control-plane` 私有 bridge 网络。Controller 使用服务名
@@ -95,7 +98,7 @@ ss -lntp | grep -E ':(11211|8080)\b' || true
 ```bash
 git clone https://github.com/WuYouOwO/NexusTier.git
 cd NexusTier
-git checkout 44044b026f759331bb354b7af3b4390227085a58
+git checkout 302df2f429c26a3fefd12a233d4296a7a042dc08
 git status --short --branch
 ```
 
@@ -121,8 +124,8 @@ POSTGRES_PASSWORD_VALUE="$(openssl rand -hex 32)"
 GATEWAY_TOKEN_VALUE="$(openssl rand -hex 32)"
 
 cat >.env <<EOF
-NEXUSTIER_GATEWAY_IMAGE=ghcr.io/wuyouowo/nexustier:sha-44044b0
-NEXUSTIER_CONTROLLER_IMAGE=ghcr.io/wuyouowo/nexustier-controller:sha-44044b0
+NEXUSTIER_GATEWAY_IMAGE=ghcr.io/wuyouowo/nexustier:sha-302df2f
+NEXUSTIER_CONTROLLER_IMAGE=ghcr.io/wuyouowo/nexustier-controller:sha-302df2f
 
 POSTGRES_DB=nexustier
 POSTGRES_USER=nexustier
@@ -144,6 +147,9 @@ NEXUSTIER_CONTROLLER_POLL_INTERVAL=15s
 NEXUSTIER_CONTROLLER_POLL_JITTER=3s
 NEXUSTIER_CONTROLLER_REQUEST_TIMEOUT=20s
 NEXUSTIER_CONTROLLER_SHUTDOWN_TIMEOUT=10s
+NEXUSTIER_CONTROLLER_METRIC_RETENTION=720h
+NEXUSTIER_CONTROLLER_CLEANUP_INTERVAL=6h
+NEXUSTIER_CONTROLLER_CLEANUP_BATCH_SIZE=10000
 EOF
 
 unset POSTGRES_PASSWORD_VALUE GATEWAY_TOKEN_VALUE
@@ -172,6 +178,9 @@ stat -c '%a %n' .env
 | `NEXUSTIER_GATEWAY_LISTEN_PORT` | 宿主机对外 UDP 端口 |
 | `NEXUSTIER_GATEWAY_API_BIND` | Gateway API 宿主机绑定地址 |
 | `NEXUSTIER_CONTROLLER_API_BIND` | Controller API 宿主机绑定地址 |
+| `NEXUSTIER_CONTROLLER_METRIC_RETENTION` | 指标样本和 collection 原始 payload 保留时间 |
+| `NEXUSTIER_CONTROLLER_CLEANUP_INTERVAL` | 后台保留清理周期 |
+| `NEXUSTIER_CONTROLLER_CLEANUP_BATCH_SIZE` | 每批删除或裁剪的最大行数 |
 
 `POSTGRES_PASSWORD` 与数据库 URL 中的密码必须一致。若手工使用含 URL 保留字符的密码，
 必须只对 URL 中的密码部分做百分号编码。不要把两个 API bind 改为公网地址，除非外层
@@ -205,13 +214,13 @@ cosign verify \
   --certificate-identity \
   'https://github.com/WuYouOwO/NexusTier/.github/workflows/docker-publish.yml@refs/heads/main' \
   --certificate-oidc-issuer 'https://token.actions.githubusercontent.com' \
-  'ghcr.io/wuyouowo/nexustier@sha256:acf3a2f1bdad378928addee3c040c0ca1de0516ddebf5d8217c16d648f90e417'
+  'ghcr.io/wuyouowo/nexustier@sha256:35ac975021ee951e1b9befaabb71d29adf566ba500b064f15fcf0879363cb3c0'
 
 cosign verify \
   --certificate-identity \
   'https://github.com/WuYouOwO/NexusTier/.github/workflows/docker-publish.yml@refs/heads/main' \
   --certificate-oidc-issuer 'https://token.actions.githubusercontent.com' \
-  'ghcr.io/wuyouowo/nexustier-controller@sha256:876b4266f4ac70c6c33e0e9e7936b6d31968b8966a89c721c511d8e9f15e3838'
+  'ghcr.io/wuyouowo/nexustier-controller@sha256:1d1022885b54fadb83dd60346ef3ed11f35b38ce6a18301f7e684dbc27702362'
 ```
 
 ## 8. 启动完整栈
@@ -220,6 +229,13 @@ cosign verify \
 
 ```bash
 docker compose --env-file .env -f compose.example.yaml up -d
+```
+
+Compose 文件也包含 Controller 的本地 `build` 定义。正常部署会使用 `.env` 中固定的
+已发布镜像；只有审核当前源码并希望本机构建 Controller 时才执行：
+
+```bash
+docker compose --env-file .env -f compose.example.yaml up -d --build controller
 ```
 
 启动顺序由健康检查控制：
@@ -248,6 +264,10 @@ curl --fail --silent --show-error http://127.0.0.1:8080/healthz | jq
 curl --fail --silent --show-error http://127.0.0.1:8080/readyz | jq
 curl --fail --silent --show-error \
   http://127.0.0.1:8080/v1/telemetry/status | jq
+curl --fail --silent --show-error \
+  http://127.0.0.1:8080/v1/retention/status | jq
+curl --fail --silent --show-error \
+  'http://127.0.0.1:8080/v1/topology?active=true&limit=100' | jq
 ```
 
 预期：
@@ -256,6 +276,9 @@ curl --fail --silent --show-error \
 - Controller `/healthz` 返回 `status=ok`。
 - Controller `/readyz` 返回 `status=ready`，表示 PostgreSQL 可访问。
 - Controller status 会在启动后出现轮询尝试；尚无客户端时可以成功摄取空拓扑。
+- Controller topology 返回持久化当前状态，而不是触发 Gateway 实时 RPC。
+- 浏览器访问 `http://127.0.0.1:8080/` 可打开内嵌只读拓扑控制台。
+- retention status 显示保留周期、批量大小、最近和累计删除/裁剪数量。
 
 Gateway `/readyz` 在没有 EasyTier 客户端时会返回 `503`，这是合法状态，不表示容器
 不健康：
@@ -273,6 +296,9 @@ docker compose --env-file .env -f compose.example.yaml exec postgres \
   psql -U nexustier -d nexustier \
   -c 'SELECT version, applied_at FROM schema_migrations ORDER BY version;'
 ```
+
+应至少包含 `001_telemetry.sql` 和 `002_metric_retention.sql`。第二个 migration 为新
+collection 增加 raw payload SHA-256 指纹和裁剪时间；不要修改已经应用的文件。
 
 如 Controller 未启动，优先查看其日志：
 
@@ -328,6 +354,38 @@ curl --fail --silent --show-error \
 `last_collection_state=ingested` 表示新快照已写入；`duplicate` 表示 Gateway TTL 内返回
 了相同 `collection_id`，Controller 正确跳过重复写入，并不是错误。
 
+### 11.1 使用持久化拓扑 API 和控制台
+
+```bash
+curl --fail --silent --show-error \
+  'http://127.0.0.1:8080/v1/topology?active=true&limit=100' | jq
+```
+
+响应包括 `latest_collection`、`latest_errors`、按 Machine UUID 排序的 `machines` 和
+`page.next_cursor`。可选参数：
+
+- `active=true|false`：过滤 Machine 和 Instance 活动状态。
+- `machine_id=<uuid>`：精确读取指定 Machine。
+- `cursor=<uuid>`：从该 Machine UUID 之后继续读取。
+- `limit=1..500`：每页 Machine 数，默认 `100`。
+
+浏览器打开 `http://127.0.0.1:8080/` 后，可查看连接图、Machine 清单、Peer RTT、
+丢包、流量、collection 新鲜度和结构化错误。该页面无认证且与 API 同源，只允许回环
+或 SSH 转发访问。
+
+### 11.2 检查保留状态
+
+```bash
+curl --fail --silent --show-error \
+  http://127.0.0.1:8080/v1/retention/status | jq
+```
+
+默认保留 `720h`。到期的 `metric_samples` 被分批删除，旧 collection 的 raw payload
+裁剪为 JSON `null`；collection 边界、状态、结构化错误和 SHA-256 指纹继续保留，确保
+审计和重复 collection 冲突检测仍有效。
+
+### 11.3 使用 SQL 深度排障
+
 查询最近采集和当前机器：
 
 ```bash
@@ -356,7 +414,7 @@ docker compose --env-file .env -f compose.example.yaml exec postgres \
     ORDER BY source_instance_id, destination_peer_id;'
 ```
 
-Controller 当前没有公开拓扑查询 API，PostgreSQL 规范化表是持久化状态的查询入口。
+日常查看优先使用控制台和 API；SQL 用于深度排障、审计和备份验证。
 
 ## 12. 日常运维
 
@@ -447,7 +505,8 @@ docker compose --env-file .env -f compose.example.yaml exec postgres \
 ```
 
 验证恢复库的 migration、最近 collection 和机器数量后，再按变更流程切换 Controller
-数据库 URL。当前 `metric_samples` 没有自动保留或分区策略，生产环境必须监测卷容量。
+数据库 URL。指标和 raw payload 有自动保留，但 collection 元数据、结构化错误和当前
+状态不会自动删除；当前也没有 PostgreSQL 分区/长期聚合，生产环境仍必须监测卷容量。
 
 ## 14. 升级和回滚
 
@@ -512,11 +571,14 @@ ssh -N \
 | 客户端只有能力探测 | 检查 Noise 安全重连、Token、UDP 22020、NAT 和 EasyTier v2.6.4 |
 | Session 在线但实例为空 | 客户端没有加载本地 EasyTier 网络配置 |
 | Controller 没有成功 collection | 查看 `/v1/telemetry/status` 和 Controller 日志 |
+| 控制台没有 Machine | 检查 `/v1/topology`、active 过滤、最近摄取状态和客户端本地实例 |
+| `/v1/topology` 返回 `503` | PostgreSQL 查询失败；检查 `/readyz` 和 Controller 日志 |
+| retention status 有 `last_error` | 检查数据库连接、锁等待、磁盘容量和批量大小 |
 | `last_error` 为 fetch topology | Gateway API 不可达或采集超过 Controller 请求超时 |
 | `last_error` 为 ingest topology | 检查 migration、schema、数据库权限和约束错误 |
 | `duplicate` 持续出现 | 轮询间隔与 Gateway TTL 导致重复 ID；属于幂等正常状态 |
 | API 从远程不可访问 | 默认只绑定宿主机回环；使用 SSH 转发，不要直接公网暴露 |
-| 数据库持续增长 | 当前没有 metric retention；监测 `postgres-data` 卷并规划归档 |
+| 数据库仍持续增长 | 当前状态和 collection 元数据不自动删除；监测卷并规划分区/长期归档 |
 
 ## 17. 停止与卸载
 
@@ -551,6 +613,8 @@ docker compose --env-file .env -f compose.example.yaml down --volumes
 - [ ] 三个服务均为 `Up`/healthy。
 - [ ] Gateway `/healthz` 返回 `200`。
 - [ ] Controller `/healthz` 和 `/readyz` 返回 `200`。
+- [ ] Controller `/v1/topology` 返回持久化 Machine/Peer，根路径控制台可打开。
+- [ ] `/v1/retention/status` 无错误且保留参数符合容量策略。
 - [ ] EasyTier 接入后 Gateway `/readyz` 返回 `200`。
 - [ ] Gateway 日志显示 `secure=true` Session，API 不包含 Token。
 - [ ] Controller status 出现最近成功 collection。
