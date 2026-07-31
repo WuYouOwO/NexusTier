@@ -186,6 +186,19 @@ stat -c '%a %n' .env
 必须只对 URL 中的密码部分做百分号编码。不要把两个 API bind 改为公网地址，除非外层
 已经提供经过审计的认证代理和网络访问控制。
 
+`POSTGRES_PASSWORD` 只在数据目录为空、PostgreSQL 首次执行 `initdb` 时生效。若
+`postgres-data` 卷已经存在，重新生成 `.env` 不会改变数据库中已有的角色密码，
+Controller 会以 `SQLSTATE 28P01` 认证失败退出。在同一台主机上重复部署时，应保留原有
+`.env`；确实需要更换密码时，改数据库角色而不是改 `.env`：
+
+```bash
+docker compose --env-file .env -f compose.example.yaml exec postgres \
+  psql -U nexustier -d nexustier -c "\password nexustier"
+```
+
+交互输入 `.env` 中的密码。`\password` 在客户端侧计算 SCRAM 校验值，明文不会进入
+服务端日志或命令历史。只有在确认可以永久丢弃全部遥测数据时，才用删除卷的方式重置。
+
 ## 7. 验证并拉取镜像
 
 先让 Compose 完整解析变量和依赖：
@@ -567,6 +580,7 @@ ssh -N \
 | Compose 报 required variable | `.env` 缺少数据库 URL、密码或 Gateway Token；重新执行第 6 节 |
 | PostgreSQL unhealthy | 检查 `postgres` 日志、卷权限、磁盘容量和密码初始化状态 |
 | Controller 启动即退出 | 检查数据库 URL 与密码是否一致、PostgreSQL 是否 healthy |
+| Controller 报 `SQLSTATE 28P01` | 卷中的角色密码早于当前 `.env`；按第 6.2 节改数据库角色密码，不要靠重新生成 `.env` |
 | Gateway `/readyz` 返回 `503` | 尚无安全注册客户端；Gateway `/healthz=200` 时容器仍正常 |
 | 客户端只有能力探测 | 检查 Noise 安全重连、Token、UDP 22020、NAT 和 EasyTier v2.6.4 |
 | Session 在线但实例为空 | 客户端没有加载本地 EasyTier 网络配置 |
