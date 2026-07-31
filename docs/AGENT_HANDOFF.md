@@ -11,10 +11,11 @@ This document is the engineering handoff for an AI agent or developer continuing
 - Gateway package: `nexustier-gateway 0.1.0`
 - Current workspace languages: Rust 2024 edition and Go 1.25
 - Declared Rust MSRV: `1.95`
-- Baseline HEAD for this handoff update: `302df2f`
+- Baseline HEAD for this handoff update: `3c2766c73409b42212169e420d3774b84fc6daa0`
 - Latest implemented telemetry-controller milestone: `302df2f` (Phase 1B)
+- Current maturity: internal Alpha; Phase 1B is complete and Phase 1C security/production hardening is next
 - First complete gateway milestone: `fbc1a9d`
-- Latest verified container workflow run: `30542389054` (successful)
+- Latest verified container workflow run: `30630119629` for `3c2766c` (successful)
 
 Always run `git status --short` and inspect the latest commits before editing. Other agents or the user may commit while work is in progress. Do not rewrite or revert changes you did not create.
 
@@ -58,7 +59,7 @@ flowchart LR
     ET -. Encrypted mesh data plane .-> PEERS[Other EasyTier peers]
 ```
 
-The Rust gateway and Go/PostgreSQL telemetry controller exist today. The controller includes a persistent current-topology API, bounded metric/raw-payload retention, and an embedded responsive console. Both application images are published by GitHub Actions, and the repository includes a PostgreSQL/Gateway/Controller Compose example. Redis, authenticated multi-tenant APIs, IPAM, and policy distribution have not been created.
+The Rust gateway and Go/PostgreSQL telemetry controller exist today. The controller includes a persistent current-topology API, bounded metric/raw-payload retention, and an embedded responsive console. Both application images are published by GitHub Actions, and the repository includes a PostgreSQL/Gateway/Controller Compose example. This is a deployable internal telemetry Alpha, not a public zero-trust SD-WAN product: Redis, authenticated multi-tenant APIs, device identity, IPAM, and policy distribution have not been created.
 
 ## 4. Critical EasyTier Protocol Facts
 
@@ -433,17 +434,18 @@ The container publication path is operational and has been verified end to end:
 - Container builds depend on a read-only Rust/Go/PostgreSQL quality job; non-PR publication alone receives package write and OIDC signing permissions.
 
 The first fully successful publication after the build fixes was run
-`30452969418` for commit `fd554d8`. The current Phase 1B publication is run
-`30542389054` for commit `302df2f`; Rust/Go quality, PostgreSQL integration,
-both build/push matrix jobs, Cosign signing, and summary publication all passed.
-The fixed images resolve to:
+`30452969418` for commit `fd554d8`. Phase 1B was first published by run
+`30542389054` for commit `302df2f`. The current publication is run `30630119629`
+for commit `3c2766c`; Rust/Go quality, PostgreSQL integration, both build/push
+matrix jobs, Cosign signing, and summary publication all passed. The fixed
+images resolve to:
 
 ```text
-ghcr.io/wuyouowo/nexustier:sha-302df2f
-sha256:35ac975021ee951e1b9befaabb71d29adf566ba500b064f15fcf0879363cb3c0
+ghcr.io/wuyouowo/nexustier:sha-3c2766c
+sha256:3162b1d80bcc8e6b6229544ad00068a064252c4d752d7eac42a56460bb336849
 
-ghcr.io/wuyouowo/nexustier-controller:sha-302df2f
-sha256:1d1022885b54fadb83dd60346ef3ed11f35b38ce6a18301f7e684dbc27702362
+ghcr.io/wuyouowo/nexustier-controller:sha-3c2766c
+sha256:52bc8cfe91257e30207eaae83df414363d6d8dc028c48738b15969f831532604
 ```
 
 The Docker build failures and their fixes were:
@@ -480,10 +482,24 @@ Notable history:
 | `654c70f` | Secure/bounded Gateway telemetry contract and Go/PostgreSQL controller foundation |
 | `44044b0` | Controller image, dual-image GHCR matrix, and Compose stack |
 | `302df2f` | Phase 1B persistent topology API, retention, embedded console, tests, and packaging |
+| `d8ec0f2` | PostgreSQL repeated-deployment password guidance and `SQLSTATE 28P01` troubleshooting |
+| `3c2766c` | Enable required EasyTier Zstd RPC support and add a compression regression test |
 
 Use `git log --oneline --decorate` for the handoff document's own commit and any newer work.
 
-## 13. Known Limitations
+## 13. Recent Field Validation and Operational Lessons
+
+Real deployment with an official EasyTier GUI v2.6.4 client exposed behavior that the in-process compatibility test could not distinguish:
+
+- A client may register successfully while all four reverse instance RPCs fail with `Invalid CompressionAlgoPb`. The cause was disabling EasyTier default features without re-enabling `zstd`; both sides of the in-process test shared the same reduced feature set and silently negotiated no compression. Commit `3c2766c` enables `zstd`, adds a direct compression/decompression regression test, and raises the expected Gateway test count to 15.
+- Run `30630119629` built, tested, published, and signed the fixed images. A Docker-capable host should still complete the final field check with the official GUI: the latest collection should move from `partial` with four RPC errors to `complete` with Node/Peer/Stats data.
+- For `postgres:18`, the Compose mount `postgres-data:/var/lib/postgresql` is correct. PostgreSQL 18 uses `PGDATA=/var/lib/postgresql/18/docker` and moved its image volume to `/var/lib/postgresql`; do not apply the PostgreSQL 17-and-earlier `/var/lib/postgresql/data` advice.
+- `POSTGRES_PASSWORD` only affects first-time `initdb` on an empty data directory. Regenerating `.env` while retaining `postgres-data` leaves the database role on the old password and causes Controller startup failure with `SQLSTATE 28P01`. Preserve the original `.env` or change the role password interactively with `\password`; delete the volume only when all telemetry data may be discarded.
+- The EasyTier config-server URL is `udp://host:22020/token`. A literal `$` before the token, or unintended shell expansion in a double-quoted URL, causes heartbeat admission failure. With an empty Session Pool, Gateway `/readyz` is `503` and Controller records a complete collection with `machine_count=0` and `error_count=0`.
+- The admission token has appeared in troubleshooting chat and must be treated as compromised. Rotate it and recreate the Gateway container; update every client afterward.
+- Do not expose the unauthenticated Controller console or either HTTP API on a public hostname, even temporarily. Use host loopback plus SSH forwarding. Use an isolated test host, separate subdomain, database, `.env`, and admission token for field testing; do not mix test workloads with a production host.
+
+## 14. Known Limitations
 
 These are intentional MVP limits, not hidden bugs:
 
@@ -503,19 +519,21 @@ These are intentional MVP limits, not hidden bugs:
 
 Avoid presenting README roadmap features as implemented software.
 
-## 14. Recommended Next Development Slice
+## 15. Recommended Next Development Slice
 
-Phase 1B is complete. The next slice should harden access and define historical telemetry before adding broad orchestration features:
+Phase 1B is complete. Treat the next slice as **Phase 1C: security and production hardening**. Do not jump directly to IPAM/ACL while the access boundary remains unauthenticated. Recommended acceptance targets:
 
-1. Design authentication, authorization, tenant boundaries, sessions/CSRF, and rate limits for Controller HTTP surfaces.
-2. Define a historical metric query contract, retention tiers, downsampling, and PostgreSQL partitioning before exposing charts.
-3. Add contract tests for authentication and historical queries, including pagination and resource limits.
-4. Decide whether Redis/WebSocket publication is needed after durable historical reads and access control are stable.
-5. Keep IPAM/ACL policy work separate from identity and historical telemetry implementation.
+1. Add Controller authentication, authorization, tenant boundaries, secure sessions/CSRF handling, rate limits, and audit events.
+2. Replace the shared bootstrap token as the long-term trust model with device enrollment, revocable credentials, and Machine ID binding.
+3. Establish an isolated field-test environment and a compatibility matrix for official GUI and CLI clients across supported operating systems.
+4. Automate repeated Compose deployment, credential rotation, backup/restore, upgrade/rollback, reconnect, and long-running stability checks.
+5. Add build/protocol version reporting so an operator can prove which Gateway and Controller images are running.
+6. Define a historical metric query contract, retention tiers, downsampling, and PostgreSQL partitioning as the following Phase 1D before exposing charts.
+7. Decide whether Redis/WebSocket publication is needed only after durable reads, access control, and multi-controller ownership are stable.
 
-Do not expose the current unauthenticated API/console to the internet, and do not start Redis, WebSocket, IPAM, and ACL work simultaneously.
+Completion of Phase 1C is the threshold for a controlled Beta. Until then, keep the system classified as an internal Alpha and do not expose the current unauthenticated API/console to the internet.
 
-## 15. Rules for Future Changes
+## 16. Rules for Future Changes
 
 - Keep control-plane and data-plane responsibilities separate.
 - Pin protocol dependencies; do not silently track upstream branches.
@@ -533,7 +551,7 @@ Do not expose the current unauthenticated API/console to the internet, and do no
 - Do not commit local proxy settings, credentials, generated `target/` output, or editor state.
 - Do not amend or rewrite user/agent commits unless explicitly requested.
 
-## 16. Fast Start Checklist
+## 17. Fast Start Checklist
 
 For a new agent:
 
@@ -548,6 +566,6 @@ For a new agent:
 7. Run the locked test and Clippy commands.
 8. Check the latest `Build and publish container image` run after changes to
   `main`; a successful push also updates and signs GHCR tags.
-9. Choose one small next module; start with authentication boundaries or historical metric design, not Redis/IPAM/ACL in parallel.
+9. Choose one small Phase 1C module; start with authentication/device identity or field-test automation, not Redis/IPAM/ACL in parallel.
 10. Update this handoff when architecture, verified commands, publication state,
    or milestone status changes.
