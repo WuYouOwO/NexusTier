@@ -79,11 +79,13 @@ easytier = {
   git = "https://github.com/EasyTier/EasyTier.git",
   rev = "8428a89d2dabc94c97d370ec607c6ca142473626",
   default-features = false,
-  features = ["aes-gcm"]
+  features = ["aes-gcm", "zstd"]
 }
 ```
 
 The commit corresponds to EasyTier tag `v2.6.4`. Do not switch to the upstream default branch or broaden features without an explicit compatibility and build-size reason.
+
+Keep the `zstd` feature enabled. EasyTier's bidirectional RPC client always advertises Zstd response support; without the feature, official GUI clients compress reverse management RPC responses with Zstd and the Gateway reports `Invalid CompressionAlgoPb` for `list_peer`, `list_route`, `show_node_info`, and `get_stats`.
 
 EasyTier v2.6.4 and its `guarden` dependency declare Rust 1.95 as their minimum supported version. Rust 1.88 fails before compilation with an explicit unsupported-rustc error. Keep Cargo metadata and the Docker builder at 1.95 or newer.
 
@@ -372,7 +374,7 @@ cargo fmt --all -- --check
 git diff --check
 ```
 
-Current expected test count: 14.
+Current expected test count: 15.
 
 Coverage includes:
 

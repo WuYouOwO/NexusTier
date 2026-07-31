@@ -136,7 +136,12 @@ mod tests {
     use easytier::{
         common::config::{ConfigFileControl, ConfigLoader, TomlConfigLoader},
         instance_manager::NetworkInstanceManager,
-        proto::{api::manage::ListNetworkInstanceRequest, rpc_types::controller::BaseController},
+        proto::{
+            api::manage::ListNetworkInstanceRequest,
+            common::CompressionAlgoPb,
+            rpc_impl::packet::{compress_packet, decompress_packet},
+            rpc_types::controller::BaseController,
+        },
         tunnel::udp::UdpTunnelConnector,
         web_client::WebClient,
     };
@@ -144,6 +149,22 @@ mod tests {
 
     use super::Gateway;
     use crate::telemetry::TelemetryCollector;
+
+    #[tokio::test]
+    async fn zstd_rpc_compression_is_enabled() {
+        let payload = vec![0x5a; 4096];
+        let (compressed, algorithm) = compress_packet(CompressionAlgoPb::Zstd, &payload)
+            .await
+            .expect("compress RPC payload");
+
+        assert_eq!(algorithm, CompressionAlgoPb::Zstd);
+        assert_eq!(
+            decompress_packet(algorithm, &compressed)
+                .await
+                .expect("decompress RPC payload"),
+            payload
+        );
+    }
 
     #[tokio::test]
     async fn native_web_client_registers_and_exposes_management_rpc() {
