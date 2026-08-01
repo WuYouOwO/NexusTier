@@ -12,8 +12,8 @@ WORKDIR /src
 COPY controller/go.mod controller/go.sum ./
 RUN go mod download
 COPY controller/ .
-# replace embedded assets with the freshly built React bundle
-COPY --from=ui-builder /ui/assets-new/ ./internal/webui/assets/
+# replace embedded assets with the freshly built React bundle (outDir: '../assets-new' → /assets-new)
+COPY --from=ui-builder /assets-new/ ./internal/webui/assets/
 RUN CGO_ENABLED=0 GOOS=linux go build \
     -trimpath \
     -ldflags="-s -w" \
