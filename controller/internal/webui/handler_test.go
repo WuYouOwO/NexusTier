@@ -13,9 +13,9 @@ func TestHandlerServesDashboardAndAssets(t *testing.T) {
 		contentType string
 		contains    string
 	}{
-		{"/", "text/html", "NexusTier Topology"},
-		{"/assets/styles.css", "text/css", ".workspace"},
-		{"/assets/app.js", "text/javascript", "loadTopology"},
+		{"/", "text/html", "NexusTier"},
+		{"/app.css", "text/css", ":root"},
+		{"/app.js", "text/javascript", "react"},
 	}
 	for _, test := range tests {
 		t.Run(test.path, func(t *testing.T) {

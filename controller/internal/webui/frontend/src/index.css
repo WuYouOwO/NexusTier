@@ -1,0 +1,58 @@
+/* Design tokens – blue/light-blue/green/white palette */
+:root {
+  --blue-900: #1e3a5f;
+  --blue-700: #1d4ed8;
+  --blue-600: #2563eb;
+  --blue-500: #3b82f6;
+  --blue-400: #60a5fa;
+  --blue-200: #bfdbfe;
+  --blue-100: #dbeafe;
+  --blue-50:  #eff6ff;
+
+  --green-700: #15803d;
+  --green-600: #16a34a;
+  --green-500: #22c55e;
+  --green-300: #86efac;
+  --green-100: #dcfce7;
+  --green-50:  #f0fdf4;
+
+  --white: #ffffff;
+  --surface: #f8fafc;
+  --surface-2: #f1f5f9;
+
+  --ink:   #0f172a;
+  --ink-2: #1e293b;
+  --muted: #64748b;
+  --line:  #e2e8f0;
+  --line-2:#cbd5e1;
+
+  --shadow-sm: 0 1px 3px 0 rgb(0 0 0 / 0.07), 0 1px 2px -1px rgb(0 0 0 / 0.07);
+  --shadow:    0 4px 6px -1px rgb(0 0 0 / 0.08), 0 2px 4px -2px rgb(0 0 0 / 0.08);
+  --shadow-lg: 0 10px 24px -3px rgb(0 0 0 / 0.1), 0 4px 8px -4px rgb(0 0 0 / 0.1);
+
+  --radius: 8px;
+  --radius-sm: 4px;
+  --radius-lg: 12px;
+
+  font-family: "Inter", "Segoe UI", system-ui, sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--ink);
+  background: var(--surface);
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+body { min-height: 100vh; background: var(--surface); }
+
+button, input, select, textarea { font: inherit; }
+button { cursor: pointer; }
+
+a { color: var(--blue-600); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--line-2); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--muted); }

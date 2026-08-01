@@ -3,3 +3,5 @@
 /.vscode
 .env
 *.log
+controller/internal/webui/frontend/node_modules/
+controller/internal/webui/assets-new/

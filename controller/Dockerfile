@@ -1,9 +1,19 @@
+FROM node:22-bookworm-slim AS ui-builder
+
+WORKDIR /ui
+COPY controller/internal/webui/frontend/package.json controller/internal/webui/frontend/package-lock.json* ./
+RUN npm install --ignore-scripts && ./node_modules/.bin/esbuild --version
+COPY controller/internal/webui/frontend/ ./
+RUN npm run build
+
 FROM golang:1.25-bookworm AS builder
 
 WORKDIR /src
 COPY controller/go.mod controller/go.sum ./
 RUN go mod download
 COPY controller/ .
+# replace embedded assets with the freshly built React bundle
+COPY --from=ui-builder /ui/assets-new/ ./internal/webui/assets/
 RUN CGO_ENABLED=0 GOOS=linux go build \
     -trimpath \
     -ldflags="-s -w" \

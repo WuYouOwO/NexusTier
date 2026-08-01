@@ -10,10 +10,11 @@ var assets embed.FS
 
 func Handler() http.Handler {
 	index := mustRead("assets/index.html")
-	styles := mustRead("assets/styles.css")
 	script := mustRead("assets/app.js")
+	css := mustRead("assets/app.css")
 	return http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
-		writer.Header().Set("Content-Security-Policy", "default-src 'self'; img-src 'self' data:; style-src 'self'; script-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'")
+		// CSP allows 'unsafe-inline' only for the bundled inline styles React may emit
+		writer.Header().Set("Content-Security-Policy", "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'")
 		writer.Header().Set("Referrer-Policy", "no-referrer")
 		writer.Header().Set("X-Content-Type-Options", "nosniff")
 		writer.Header().Set("X-Frame-Options", "DENY")
@@ -22,10 +23,10 @@ func Handler() http.Handler {
 		case "/":
 			writer.Header().Set("Content-Type", "text/html; charset=utf-8")
 			_, _ = writer.Write(index)
-		case "/assets/styles.css":
+		case "/app.css":
 			writer.Header().Set("Content-Type", "text/css; charset=utf-8")
-			_, _ = writer.Write(styles)
-		case "/assets/app.js":
+			_, _ = writer.Write(css)
+		case "/app.js":
 			writer.Header().Set("Content-Type", "text/javascript; charset=utf-8")
 			_, _ = writer.Write(script)
 		default:
