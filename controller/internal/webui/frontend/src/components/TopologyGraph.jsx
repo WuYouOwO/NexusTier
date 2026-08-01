@@ -2,99 +2,47 @@ import { useEffect, useRef, useCallback } from 'react'
 import { latencyColor, formatLatency, shortID } from '../utils.js'
 import styles from './TopologyGraph.module.css'
 
-// --- force simulation (no external lib) ---
+// --- 力模拟（无外部库）---
 function createSimulation(nodes, edges) {
-  const REPEL = 3200
-  const SPRING_LEN = 130
-  const SPRING_K = 0.04
-  const DAMP = 0.82
-  const CENTER_K = 0.008
-
-  nodes.forEach(n => {
-    if (n.vx == null) { n.vx = (Math.random() - 0.5) * 2; n.vy = (Math.random() - 0.5) * 2 }
-  })
-
+  const REPEL = 3600, SPRING_LEN = 140, SPRING_K = 0.04, DAMP = 0.82, CENTER_K = 0.007
+  nodes.forEach(n => { if (n.vx == null) { n.vx = (Math.random()-.5)*2; n.vy = (Math.random()-.5)*2 } })
   return function tick(cx, cy) {
     for (let i = 0; i < nodes.length; i++) {
-      let fx = 0, fy = 0
-      const a = nodes[i]
-
-      // repulsion between all pairs
+      let fx = 0, fy = 0; const a = nodes[i]
       for (let j = 0; j < nodes.length; j++) {
         if (i === j) continue
-        const b = nodes[j]
-        const dx = a.x - b.x, dy = a.y - b.y
-        const dist = Math.sqrt(dx * dx + dy * dy) || 1
-        const f = REPEL / (dist * dist)
-        fx += (dx / dist) * f
-        fy += (dy / dist) * f
+        const b = nodes[j]; const dx = a.x - b.x, dy = a.y - b.y
+        const dist = Math.sqrt(dx*dx + dy*dy) || 1; const f = REPEL/(dist*dist)
+        fx += (dx/dist)*f; fy += (dy/dist)*f
       }
-
-      // spring attraction along edges
       for (const e of edges) {
         let other = null
         if (e.source === a.key) other = nodes.find(n => n.key === e.target)
         else if (e.target === a.key) other = nodes.find(n => n.key === e.source)
         if (!other) continue
-        const dx = other.x - a.x, dy = other.y - a.y
-        const dist = Math.sqrt(dx * dx + dy * dy) || 1
+        const dx = other.x - a.x, dy = other.y - a.y, dist = Math.sqrt(dx*dx+dy*dy)||1
         const stretch = dist - SPRING_LEN
-        fx += (dx / dist) * stretch * SPRING_K
-        fy += (dy / dist) * stretch * SPRING_K
+        fx += (dx/dist)*stretch*SPRING_K; fy += (dy/dist)*stretch*SPRING_K
       }
-
-      // center gravity
-      fx += (cx - a.x) * CENTER_K
-      fy += (cy - a.y) * CENTER_K
-
-      a.vx = (a.vx + fx) * DAMP
-      a.vy = (a.vy + fy) * DAMP
-      a.x += a.vx
-      a.y += a.vy
+      fx += (cx - a.x)*CENTER_K; fy += (cy - a.y)*CENTER_K
+      a.vx = (a.vx + fx)*DAMP; a.vy = (a.vy + fy)*DAMP
+      a.x += a.vx; a.y += a.vy
     }
   }
 }
 
-// --- build graph data from topology ---
 function buildGraph(machines) {
-  const nodes = []
-  const edges = []
-  const peerSeen = new Set()
-
+  const nodes = [], edges = [], peerSeen = new Set()
   for (const m of machines) {
     const mk = `m:${m.machine_id}`
-    if (!nodes.find(n => n.key === mk)) {
-      nodes.push({
-        key: mk, type: 'machine', active: m.active,
-        label: m.hostname || shortID(m.machine_id),
-        sub: shortID(m.machine_id),
-        data: m,
-        x: Math.random() * 600 + 100,
-        y: Math.random() * 400 + 100,
-        vx: 0, vy: 0,
-      })
-    }
+    if (!nodes.find(n => n.key === mk)) nodes.push({ key: mk, type: 'machine', active: m.active, label: m.hostname || shortID(m.machine_id), sub: shortID(m.machine_id), data: m, x: Math.random()*600+100, y: Math.random()*400+100, vx: 0, vy: 0 })
     for (const inst of (m.network_instances || [])) {
       for (const peer of (inst.peers || [])) {
         const pk = `p:${inst.instance_id}:${peer.peer_id}`
         if (!peerSeen.has(pk)) {
           peerSeen.add(pk)
-          nodes.push({
-            key: pk, type: 'peer',
-            label: peer.hostname || `Peer ${peer.peer_id}`,
-            sub: peer.ipv4 || `#${peer.peer_id}`,
-            data: peer, instance: inst,
-            latency: peer.latency_ms,
-            x: Math.random() * 600 + 100,
-            y: Math.random() * 400 + 100,
-            vx: 0, vy: 0,
-          })
-          edges.push({
-            source: mk, target: pk,
-            direct: peer.direct,
-            latency: peer.latency_ms,
-            key: `e:${pk}`,
-          })
+          nodes.push({ key: pk, type: 'peer', label: peer.hostname || `Peer ${peer.peer_id}`, sub: peer.ipv4 || `#${peer.peer_id}`, data: peer, instance: inst, latency: peer.latency_ms, x: Math.random()*600+100, y: Math.random()*400+100, vx: 0, vy: 0 })
+          edges.push({ source: mk, target: pk, direct: peer.direct, latency: peer.latency_ms, key: `e:${pk}` })
         }
       }
     }
@@ -102,197 +50,97 @@ function buildGraph(machines) {
   return { nodes, edges }
 }
 
+function svgEl(name, attrs) {
+  const el = document.createElementNS('http://www.w3.org/2000/svg', name)
+  Object.entries(attrs).forEach(([k, v]) => el.setAttribute(k, v))
+  return el
+}
+
 export default function TopologyGraph({ machines, selected, onSelect }) {
   const svgRef = useRef(null)
   const stateRef = useRef({ nodes: [], edges: [], tick: null, dragging: null, zoom: 1, panX: 0, panY: 0, animId: null })
   const selectedKeyRef = useRef(null)
-
   selectedKeyRef.current = selected?.key ?? null
 
   const rebuildGraph = useCallback((mList) => {
     const { nodes: newNodes, edges } = buildGraph(mList)
     const s = stateRef.current
-    // preserve positions for existing nodes
     for (const n of newNodes) {
       const prev = s.nodes.find(p => p.key === n.key)
       if (prev) { n.x = prev.x; n.y = prev.y; n.vx = prev.vx; n.vy = prev.vy }
     }
-    s.nodes = newNodes
-    s.edges = edges
+    s.nodes = newNodes; s.edges = edges
     const svg = svgRef.current
-    if (svg) {
-      const cx = (svg.clientWidth || 800) / 2
-      const cy = (svg.clientHeight || 500) / 2
-      s.tick = createSimulation(s.nodes, s.edges).bind(null, cx, cy)
-    }
+    if (svg) { const cx = (svg.clientWidth||800)/2; const cy = (svg.clientHeight||500)/2; s.tick = createSimulation(s.nodes, s.edges).bind(null, cx, cy) }
   }, [])
 
-  // rebuild when machines change
   useEffect(() => { rebuildGraph(machines) }, [machines, rebuildGraph])
 
-  // render loop
   useEffect(() => {
-    const svg = svgRef.current
-    if (!svg) return
-    const s = stateRef.current
-    let stopped = false
+    const svg = svgRef.current; if (!svg) return
+    const s = stateRef.current; let stopped = false
 
     function draw() {
       if (stopped) return
       if (s.nodes.length === 0) { s.animId = requestAnimationFrame(draw); return }
+      if (s.tick) { const cx = (svg.clientWidth||800)/2; const cy = (svg.clientHeight||500)/2; s.tick = createSimulation(s.nodes, s.edges).bind(null, cx, cy); for (let i=0;i<3;i++) s.tick(cx, cy) }
 
-      // run simulation
-      if (s.tick) {
-        const cx = (svg.clientWidth || 800) / 2
-        const cy = (svg.clientHeight || 500) / 2
-        s.tick = createSimulation(s.nodes, s.edges).bind(null, cx, cy)
-        for (let i = 0; i < 3; i++) s.tick(cx, cy)
-      }
-
-      const W = svg.clientWidth || 800
-      const H = svg.clientHeight || 500
+      const W = svg.clientWidth||800, H = svg.clientHeight||500
       svg.setAttribute('viewBox', `0 0 ${W} ${H}`)
-
-      // clear and redraw
       svg.innerHTML = ''
 
-      // defs: arrowhead markers
-      const defs = document.createElementNS('http://www.w3.org/2000/svg', 'defs')
-      for (const [id, color] of [['arr-direct', '#22c55e'], ['arr-relay', '#f59e0b']]) {
-        const marker = document.createElementNS('http://www.w3.org/2000/svg', 'marker')
-        marker.setAttribute('id', id)
-        marker.setAttribute('markerWidth', '7')
-        marker.setAttribute('markerHeight', '7')
-        marker.setAttribute('refX', '6')
-        marker.setAttribute('refY', '3.5')
-        marker.setAttribute('orient', 'auto')
-        const poly = document.createElementNS('http://www.w3.org/2000/svg', 'polygon')
-        poly.setAttribute('points', '0 0, 7 3.5, 0 7')
-        poly.setAttribute('fill', color)
-        poly.setAttribute('opacity', '0.7')
-        marker.appendChild(poly)
-        defs.appendChild(marker)
+      const defs = svgEl('defs', {})
+      for (const [id, color] of [['arr-d', '#1677ff'], ['arr-r', '#faad14']]) {
+        const mk = svgEl('marker', { id, markerWidth: '7', markerHeight: '7', refX: '6', refY: '3.5', orient: 'auto' })
+        const poly = svgEl('polygon', { points: '0 0, 7 3.5, 0 7', fill: color, opacity: '0.7' })
+        mk.appendChild(poly); defs.appendChild(mk)
       }
       svg.appendChild(defs)
 
-      const g = document.createElementNS('http://www.w3.org/2000/svg', 'g')
-      g.setAttribute('transform', `translate(${s.panX},${s.panY}) scale(${s.zoom})`)
+      const g = svgEl('g', { transform: `translate(${s.panX},${s.panY}) scale(${s.zoom})` })
       svg.appendChild(g)
-
       const byKey = new Map(s.nodes.map(n => [n.key, n]))
 
-      // draw edges first
+      // 边
       for (const e of s.edges) {
-        const src = byKey.get(e.source), tgt = byKey.get(e.target)
-        if (!src || !tgt) continue
-        const color = e.direct ? (e.latency != null ? latencyColor(e.latency) : '#22c55e') : '#f59e0b'
-        const line = document.createElementNS('http://www.w3.org/2000/svg', 'line')
-        line.setAttribute('x1', src.x); line.setAttribute('y1', src.y)
-        line.setAttribute('x2', tgt.x); line.setAttribute('y2', tgt.y)
-        line.setAttribute('stroke', color)
-        line.setAttribute('stroke-width', e.direct ? '2' : '1.5')
-        line.setAttribute('stroke-opacity', '0.6')
+        const src = byKey.get(e.source), tgt = byKey.get(e.target); if (!src||!tgt) continue
+        const color = e.direct ? (e.latency != null ? latencyColor(e.latency) : '#1677ff') : '#faad14'
+        const line = svgEl('line', { x1: src.x, y1: src.y, x2: tgt.x, y2: tgt.y, stroke: color, 'stroke-width': e.direct ? '1.8' : '1.5', 'stroke-opacity': '0.55' })
         if (!e.direct) line.setAttribute('stroke-dasharray', '6 4')
-        line.setAttribute('marker-end', `url(#${e.direct ? 'arr-direct' : 'arr-relay'})`)
+        line.setAttribute('marker-end', `url(#${e.direct ? 'arr-d' : 'arr-r'})`)
         g.appendChild(line)
-
-        // RTT label on edge midpoint
         if (e.latency != null) {
-          const mx = (src.x + tgt.x) / 2, my = (src.y + tgt.y) / 2
-          const bg = document.createElementNS('http://www.w3.org/2000/svg', 'rect')
-          bg.setAttribute('x', mx - 22); bg.setAttribute('y', my - 9)
-          bg.setAttribute('width', '44'); bg.setAttribute('height', '14')
-          bg.setAttribute('rx', '3'); bg.setAttribute('fill', 'white')
-          bg.setAttribute('fill-opacity', '0.85')
-          g.appendChild(bg)
-          const lbl = document.createElementNS('http://www.w3.org/2000/svg', 'text')
-          lbl.setAttribute('x', mx); lbl.setAttribute('y', my + 1)
-          lbl.setAttribute('text-anchor', 'middle')
-          lbl.setAttribute('font-size', '9')
-          lbl.setAttribute('fill', color)
-          lbl.setAttribute('font-weight', '600')
-          lbl.setAttribute('pointer-events', 'none')
+          const mx = (src.x+tgt.x)/2, my = (src.y+tgt.y)/2
+          const bg = svgEl('rect', { x: mx-22, y: my-9, width: '44', height: '14', rx: '3', fill: 'white', 'fill-opacity': '0.9' })
+          const lbl = svgEl('text', { x: mx, y: my+1, 'text-anchor': 'middle', 'font-size': '9', fill: color, 'font-weight': '600', 'pointer-events': 'none' })
           lbl.textContent = formatLatency(e.latency)
-          g.appendChild(lbl)
+          g.appendChild(bg); g.appendChild(lbl)
         }
       }
 
-      // draw nodes
+      // 节点
       for (const node of s.nodes) {
-        const isMachine = node.type === 'machine'
-        const isSel = selectedKeyRef.current === node.key
-        const r = isMachine ? 14 : 10
-
-        const grp = document.createElementNS('http://www.w3.org/2000/svg', 'g')
-        grp.setAttribute('cursor', 'pointer')
-        grp.setAttribute('tabindex', '0')
-        grp.setAttribute('role', 'button')
-        grp.setAttribute('aria-label', node.label)
-
-        // hitbox
-        const hit = document.createElementNS('http://www.w3.org/2000/svg', 'circle')
-        hit.setAttribute('cx', node.x); hit.setAttribute('cy', node.y)
-        hit.setAttribute('r', r + 8)
-        hit.setAttribute('fill', 'transparent')
+        const isMachine = node.type === 'machine', isSel = selectedKeyRef.current === node.key, r = isMachine ? 13 : 9
+        const grp = svgEl('g', { cursor: 'pointer', tabindex: '0', role: 'button', 'aria-label': node.label })
+        const hit = svgEl('circle', { cx: node.x, cy: node.y, r: r+8, fill: 'transparent' })
         grp.appendChild(hit)
-
-        // glow ring when selected
         if (isSel) {
-          const ring = document.createElementNS('http://www.w3.org/2000/svg', 'circle')
-          ring.setAttribute('cx', node.x); ring.setAttribute('cy', node.y)
-          ring.setAttribute('r', r + 5)
-          ring.setAttribute('fill', 'none')
-          ring.setAttribute('stroke', '#3b82f6')
-          ring.setAttribute('stroke-width', '3')
-          ring.setAttribute('stroke-opacity', '0.5')
+          const ring = svgEl('circle', { cx: node.x, cy: node.y, r: r+5, fill: 'none', stroke: '#1677ff', 'stroke-width': '2.5', 'stroke-opacity': '.5' })
           grp.appendChild(ring)
         }
-
-        // node circle
-        const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle')
-        circle.setAttribute('cx', node.x); circle.setAttribute('cy', node.y)
-        circle.setAttribute('r', r)
-        const fill = node.active === false ? '#94a3b8'
-          : isMachine ? '#3b82f6'
-          : (node.latency != null ? latencyColor(node.latency) : '#60a5fa')
-        circle.setAttribute('fill', fill)
-        circle.setAttribute('stroke', 'white')
-        circle.setAttribute('stroke-width', '2')
-        circle.setAttribute('filter', 'drop-shadow(0 2px 4px rgba(0,0,0,0.18))')
+        const fill = node.active === false ? '#bfbfbf' : isMachine ? '#1677ff' : (node.latency != null ? latencyColor(node.latency) : '#40a9ff')
+        const circle = svgEl('circle', { cx: node.x, cy: node.y, r, fill, stroke: 'white', 'stroke-width': '2', filter: 'drop-shadow(0 1px 3px rgba(0,0,0,.18))' })
         grp.appendChild(circle)
-
-        // label
-        const lbl = document.createElementNS('http://www.w3.org/2000/svg', 'text')
-        lbl.setAttribute('x', node.x + r + 6)
-        lbl.setAttribute('y', node.y - 2)
-        lbl.setAttribute('font-size', '11')
-        lbl.setAttribute('font-weight', '700')
-        lbl.setAttribute('fill', '#0f172a')
-        lbl.setAttribute('pointer-events', 'none')
-        lbl.textContent = node.label.length > 18 ? node.label.slice(0, 17) + '…' : node.label
-        grp.appendChild(lbl)
-
-        const sub = document.createElementNS('http://www.w3.org/2000/svg', 'text')
-        sub.setAttribute('x', node.x + r + 6)
-        sub.setAttribute('y', node.y + 10)
-        sub.setAttribute('font-size', '9')
-        sub.setAttribute('fill', '#64748b')
-        sub.setAttribute('pointer-events', 'none')
+        const lbl = svgEl('text', { x: node.x+r+6, y: node.y-2, 'font-size': '11', 'font-weight': '600', fill: '#1f2937', 'pointer-events': 'none' })
+        lbl.textContent = node.label.length > 18 ? node.label.slice(0,17)+'…' : node.label
+        const sub = svgEl('text', { x: node.x+r+6, y: node.y+10, 'font-size': '9', fill: '#8c8c8c', 'pointer-events': 'none' })
         sub.textContent = node.sub
-        grp.appendChild(sub)
-
-        grp.addEventListener('click', (e) => { e.stopPropagation(); onSelect?.(node) })
-        grp.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') onSelect?.(node) })
-
-        // drag
-        grp.addEventListener('pointerdown', (e) => {
-          e.stopPropagation()
-          s.dragging = { node, startX: e.clientX, startY: e.clientY, ox: node.x, oy: node.y }
-        })
-
+        grp.appendChild(lbl); grp.appendChild(sub)
+        grp.addEventListener('click', e => { e.stopPropagation(); onSelect?.(node) })
+        grp.addEventListener('keydown', e => { if (e.key==='Enter'||e.key===' ') onSelect?.(node) })
+        grp.addEventListener('pointerdown', e => { e.stopPropagation(); s.dragging = { node, startX: e.clientX, startY: e.clientY, ox: node.x, oy: node.y } })
         g.appendChild(grp)
       }
-
       s.animId = requestAnimationFrame(draw)
     }
 
@@ -300,69 +148,40 @@ export default function TopologyGraph({ machines, selected, onSelect }) {
     return () => { stopped = true; cancelAnimationFrame(s.animId) }
   }, [onSelect])
 
-  // pan + zoom on the SVG itself
+  // 缩放平移
   useEffect(() => {
-    const svg = svgRef.current
-    if (!svg) return
-    const s = stateRef.current
-    let panning = false, panStart = { x: 0, y: 0 }, panOrigin = { x: 0, y: 0 }
-
-    function onWheel(e) {
-      e.preventDefault()
-      const delta = e.deltaY < 0 ? 1.1 : 0.91
-      s.zoom = Math.max(0.2, Math.min(4, s.zoom * delta))
+    const svg = svgRef.current; if (!svg) return
+    const s = stateRef.current; let panning = false, panStart = {x:0,y:0}, panOrigin = {x:0,y:0}
+    const onWheel = e => { e.preventDefault(); s.zoom = Math.max(.2, Math.min(4, s.zoom*(e.deltaY<0?1.1:.91))) }
+    const onDown = e => { if (s.dragging) return; panning=true; panStart={x:e.clientX,y:e.clientY}; panOrigin={x:s.panX,y:s.panY}; svg.setPointerCapture(e.pointerId) }
+    const onMove = e => {
+      if (s.dragging) { const d=s.dragging; d.node.x=d.ox+(e.clientX-d.startX)/s.zoom; d.node.y=d.oy+(e.clientY-d.startY)/s.zoom; d.node.vx=0; d.node.vy=0; return }
+      if (!panning) return; s.panX=panOrigin.x+(e.clientX-panStart.x); s.panY=panOrigin.y+(e.clientY-panStart.y)
     }
-
-    function onPointerDown(e) {
-      if (s.dragging) return
-      panning = true
-      panStart = { x: e.clientX, y: e.clientY }
-      panOrigin = { x: s.panX, y: s.panY }
-      svg.setPointerCapture(e.pointerId)
-    }
-
-    function onPointerMove(e) {
-      if (s.dragging) {
-        const d = s.dragging
-        d.node.x = d.ox + (e.clientX - d.startX) / s.zoom
-        d.node.y = d.oy + (e.clientY - d.startY) / s.zoom
-        d.node.vx = 0; d.node.vy = 0
-        return
-      }
-      if (!panning) return
-      s.panX = panOrigin.x + (e.clientX - panStart.x)
-      s.panY = panOrigin.y + (e.clientY - panStart.y)
-    }
-
-    function onPointerUp() {
-      panning = false
-      s.dragging = null
-    }
-
-    svg.addEventListener('wheel', onWheel, { passive: false })
-    svg.addEventListener('pointerdown', onPointerDown)
-    svg.addEventListener('pointermove', onPointerMove)
-    svg.addEventListener('pointerup', onPointerUp)
-    return () => {
-      svg.removeEventListener('wheel', onWheel)
-      svg.removeEventListener('pointerdown', onPointerDown)
-      svg.removeEventListener('pointermove', onPointerMove)
-      svg.removeEventListener('pointerup', onPointerUp)
-    }
+    const onUp = () => { panning=false; s.dragging=null }
+    svg.addEventListener('wheel', onWheel, {passive:false}); svg.addEventListener('pointerdown', onDown); svg.addEventListener('pointermove', onMove); svg.addEventListener('pointerup', onUp)
+    return () => { svg.removeEventListener('wheel', onWheel); svg.removeEventListener('pointerdown', onDown); svg.removeEventListener('pointermove', onMove); svg.removeEventListener('pointerup', onUp) }
   }, [])
 
-  const isEmpty = machines.length === 0
+  const reset = () => { const s = stateRef.current; s.zoom=1; s.panX=0; s.panY=0 }
+  const zoomIn  = () => { stateRef.current.zoom = Math.min(4, stateRef.current.zoom*1.2) }
+  const zoomOut = () => { stateRef.current.zoom = Math.max(.2, stateRef.current.zoom*.83) }
 
   return (
     <div className={styles.wrap}>
-      {isEmpty && (
+      {machines.length === 0 && (
         <div className={styles.empty}>
-          <strong>No topology data</strong>
-          <span>Connect an EasyTier client or adjust the filters.</span>
+          <strong>暂无拓扑数据</strong>
+          <span>接入 EasyTier 客户端或调整筛选条件</span>
         </div>
       )}
-      <svg ref={svgRef} className={styles.svg} role="img" aria-label="NexusTier topology graph" />
-      <div className={styles.hint}>Scroll to zoom · Drag to pan · Click node to inspect</div>
+      <svg ref={svgRef} className={styles.svg} role="img" aria-label="NexusTier 拓扑图" />
+      <div className={styles.controls}>
+        <button className={styles.ctrlBtn} onClick={zoomIn} title="放大">＋</button>
+        <button className={styles.ctrlBtn} onClick={zoomOut} title="缩小">－</button>
+        <button className={styles.ctrlBtn} onClick={reset} title="还原">⊙</button>
+      </div>
+      <div className={styles.hint}>滚轮缩放 · 拖拽平移 · 点击节点查看详情</div>
     </div>
   )
 }

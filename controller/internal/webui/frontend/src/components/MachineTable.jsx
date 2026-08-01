@@ -6,21 +6,21 @@ export default function MachineTable({ machines, onSelect, hasMore, onLoadMore }
     <section className={styles.section}>
       <div className={styles.heading}>
         <div>
-          <p className={styles.eyebrow}>Persisted Current State</p>
-          <h2 className={styles.title}>Machine inventory</h2>
+          <p className={styles.eyebrow}>持久化当前状态</p>
+          <h2 className={styles.title}>节点清单</h2>
         </div>
-        <span className={styles.count}>{machines.length} result{machines.length !== 1 ? 's' : ''}</span>
+        <span className={styles.count}>{machines.length} 条记录</span>
       </div>
       <div className={styles.tableWrap}>
         <table className={styles.table}>
           <thead>
             <tr>
-              <th>Machine</th>
-              <th>State</th>
-              <th>Instances</th>
-              <th>Peers</th>
-              <th>Last observed</th>
-              <th>EasyTier</th>
+              <th>节点名称</th>
+              <th>状态</th>
+              <th>实例数</th>
+              <th>Peer 数</th>
+              <th>最近观测</th>
+              <th>版本</th>
             </tr>
           </thead>
           <tbody>
@@ -31,13 +31,13 @@ export default function MachineTable({ machines, onSelect, hasMore, onLoadMore }
                 <tr key={m.machine_id} onClick={() => onSelect?.({ key: `m:${m.machine_id}`, type: 'machine', data: m, label: m.hostname })}>
                   <td>
                     <div className={styles.machineName}>
-                      <strong>{m.hostname || 'Unnamed'}</strong>
+                      <strong>{m.hostname || '未命名'}</strong>
                       <small>{shortID(m.machine_id)}</small>
                     </div>
                   </td>
                   <td>
                     <span className={`${styles.badge} ${m.active ? styles.active : styles.inactive}`}>
-                      {m.active ? 'Active' : 'Inactive'}
+                      {m.active ? '活跃' : '非活跃'}
                     </span>
                   </td>
                   <td>{instances.length}</td>
@@ -48,13 +48,13 @@ export default function MachineTable({ machines, onSelect, hasMore, onLoadMore }
               )
             })}
             {machines.length === 0 && (
-              <tr><td colSpan={6} className={styles.empty}>No machines match the current filter.</td></tr>
+              <tr><td colSpan={6} className={styles.empty}>当前筛选条件下无节点数据</td></tr>
             )}
           </tbody>
         </table>
       </div>
       {hasMore && (
-        <button className={styles.loadMore} onClick={onLoadMore}>Load more</button>
+        <button className={styles.loadMore} onClick={onLoadMore}>加载更多</button>
       )}
     </section>
   )

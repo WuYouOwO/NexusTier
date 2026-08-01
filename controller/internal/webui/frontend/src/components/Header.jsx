@@ -1,22 +1,36 @@
 import styles from './Header.module.css'
 
-const STATUS_LABEL = { connecting: 'Connecting…', online: 'Live', offline: 'Unavailable' }
+const STATUS = {
+  connecting: { label: '连接中',   cls: 'connecting' },
+  online:     { label: '运行正常', cls: 'online' },
+  offline:    { label: '连接失败', cls: 'offline' },
+}
 
 export default function Header({ status, updatedAt }) {
+  const s = STATUS[status] || STATUS.connecting
   return (
     <header className={styles.header}>
-      <div className={styles.brand}>
-        <span className={styles.eyebrow}>NexusTier</span>
-        <h1 className={styles.title}>Control Plane</h1>
+      <div className={styles.left}>
+        <div className={styles.logo}>
+          <span className={styles.logoMark}>N</span>
+          <span className={styles.logoName}>NexusTier</span>
+        </div>
+        <nav className={styles.nav}>
+          <span className={`${styles.navItem} ${styles.active}`}>拓扑概览</span>
+          <span className={styles.navItem}>节点管理</span>
+          <span className={styles.navItem}>网络状态</span>
+        </nav>
       </div>
-      <div className={styles.statusBlock}>
-        <span className={`${styles.dot} ${styles[status]}`} aria-hidden="true" />
-        <span className={styles.statusLabel}>{STATUS_LABEL[status]}</span>
+      <div className={styles.right}>
         {updatedAt && (
-          <time className={styles.time} dateTime={updatedAt.toISOString()}>
-            Updated {new Intl.DateTimeFormat(undefined, { timeStyle: 'medium' }).format(updatedAt)}
-          </time>
+          <span className={styles.time}>
+            最后更新：{new Intl.DateTimeFormat('zh-CN', { timeStyle: 'medium' }).format(updatedAt)}
+          </span>
         )}
+        <div className={`${styles.badge} ${styles[s.cls]}`}>
+          <i className={styles.dot} />
+          {s.label}
+        </div>
       </div>
     </header>
   )

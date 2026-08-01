@@ -1,58 +1,47 @@
-/* Design tokens – blue/light-blue/green/white palette */
+/* Design tokens – Zenlayer-inspired light theme */
 :root {
-  --blue-900: #1e3a5f;
-  --blue-700: #1d4ed8;
-  --blue-600: #2563eb;
-  --blue-500: #3b82f6;
-  --blue-400: #60a5fa;
-  --blue-200: #bfdbfe;
-  --blue-100: #dbeafe;
-  --blue-50:  #eff6ff;
+  --primary:      #1677ff;
+  --primary-hover:#0958d9;
+  --primary-light:#e6f4ff;
+  --success:      #52c41a;
+  --success-bg:   #f6ffed;
+  --warning:      #faad14;
+  --warning-bg:   #fffbe6;
+  --danger:       #ff4d4f;
+  --danger-bg:    #fff2f0;
 
-  --green-700: #15803d;
-  --green-600: #16a34a;
-  --green-500: #22c55e;
-  --green-300: #86efac;
-  --green-100: #dcfce7;
-  --green-50:  #f0fdf4;
+  --bg:       #f0f2f5;
+  --surface:  #ffffff;
+  --surface-2:#f5f7fa;
+  --border:   #e8eaed;
+  --border-2: #d1d5db;
 
-  --white: #ffffff;
-  --surface: #f8fafc;
-  --surface-2: #f1f5f9;
+  --text-1:   #1f2937;
+  --text-2:   #374151;
+  --text-3:   #6b7280;
+  --text-4:   #9ca3af;
 
-  --ink:   #0f172a;
-  --ink-2: #1e293b;
-  --muted: #64748b;
-  --line:  #e2e8f0;
-  --line-2:#cbd5e1;
+  --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+  --shadow:    0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1);
+  --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.07), 0 2px 4px -2px rgb(0 0 0 / 0.07);
 
-  --shadow-sm: 0 1px 3px 0 rgb(0 0 0 / 0.07), 0 1px 2px -1px rgb(0 0 0 / 0.07);
-  --shadow:    0 4px 6px -1px rgb(0 0 0 / 0.08), 0 2px 4px -2px rgb(0 0 0 / 0.08);
-  --shadow-lg: 0 10px 24px -3px rgb(0 0 0 / 0.1), 0 4px 8px -4px rgb(0 0 0 / 0.1);
-
-  --radius: 8px;
   --radius-sm: 4px;
-  --radius-lg: 12px;
+  --radius:    6px;
+  --radius-lg: 10px;
+  --nav-h:     52px;
 
-  font-family: "Inter", "Segoe UI", system-ui, sans-serif;
-  font-size: 14px;
+  font-family: -apple-system, "PingFang SC", "Microsoft YaHei", "Helvetica Neue", Arial, sans-serif;
+  font-size: 13px;
   line-height: 1.5;
-  color: var(--ink);
-  background: var(--surface);
+  color: var(--text-1);
+  background: var(--bg);
+  -webkit-font-smoothing: antialiased;
 }
 
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-
-body { min-height: 100vh; background: var(--surface); }
-
-button, input, select, textarea { font: inherit; }
-button { cursor: pointer; }
-
-a { color: var(--blue-600); text-decoration: none; }
-a:hover { text-decoration: underline; }
-
-/* Scrollbar */
-::-webkit-scrollbar { width: 6px; height: 6px; }
+body { min-height: 100vh; }
+button, input, select { font: inherit; }
+button { cursor: pointer; border: none; background: none; }
+::-webkit-scrollbar { width: 5px; height: 5px; }
 ::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: var(--line-2); border-radius: 3px; }
-::-webkit-scrollbar-thumb:hover { background: var(--muted); }
+::-webkit-scrollbar-thumb { background: var(--border-2); border-radius: 3px; }

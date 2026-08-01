@@ -1,14 +1,14 @@
 export function shortID(v) { return v ? String(v).slice(0, 8) : '—' }
 
 export function formatDate(date) {
-  if (!date || isNaN(date.getTime())) return 'Unknown'
-  return new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'medium' }).format(date)
+  if (!date || isNaN(date.getTime())) return '未知'
+  return new Intl.DateTimeFormat('zh-CN', { dateStyle: 'medium', timeStyle: 'medium' }).format(date)
 }
 
 export function relativeTime(date) {
-  if (!date || isNaN(date.getTime())) return 'Unknown'
+  if (!date || isNaN(date.getTime())) return '未知'
   const seconds = Math.round((date.getTime() - Date.now()) / 1000)
-  const fmt = new Intl.RelativeTimeFormat(undefined, { numeric: 'auto' })
+  const fmt = new Intl.RelativeTimeFormat('zh-CN', { numeric: 'auto' })
   if (Math.abs(seconds) < 60) return fmt.format(seconds, 'second')
   const minutes = Math.round(seconds / 60)
   if (Math.abs(minutes) < 60) return fmt.format(minutes, 'minute')
@@ -36,14 +36,14 @@ export function formatLoss(rate) {
 }
 
 export function deviceLabel(d) {
-  if (!d) return 'Unknown'
-  return [d.distribution, d.os_version].filter(Boolean).join(' ') || d.os_type || 'Unknown'
+  if (!d) return '未知'
+  return [d.distribution, d.os_version].filter(Boolean).join(' ') || d.os_type || '未知'
 }
 
-/** RTT → hue-based color: green(0ms)→yellow(50ms)→red(200ms+) */
+/** RTT → hue color: green(0ms) → yellow(50ms) → red(200ms+) */
 export function latencyColor(ms) {
-  if (ms == null) return '#94a3b8'
+  if (ms == null) return '#8c8c8c'
   const t = Math.min(ms / 200, 1)
-  const h = Math.round((1 - t) * 120)
-  return `hsl(${h}, 70%, 45%)`
+  if (t < 0.5) return `hsl(${Math.round(120 - t * 2 * 60)}, 70%, 40%)`
+  return `hsl(${Math.round(60 - (t - 0.5) * 2 * 60)}, 80%, 40%)`
 }

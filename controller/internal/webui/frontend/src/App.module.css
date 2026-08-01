@@ -1,10 +1,10 @@
-.app { min-height: 100vh; display: flex; flex-direction: column; }
+.app { min-height: 100vh; display: flex; flex-direction: column; background: var(--bg); }
 
 .main {
   flex: 1;
   width: min(1600px, 100%);
   margin: 0 auto;
-  padding: 20px clamp(12px, 3vw, 40px) 48px;
+  padding: 20px clamp(12px, 3vw, 36px) 48px;
   display: flex;
   flex-direction: column;
   gap: 16px;
@@ -13,8 +13,72 @@
 .statsRow {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 14px;
+  gap: 12px;
 }
+
+/* 拓扑图工作区：左侧图形 + 右侧面板 */
+.workspace {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 300px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  overflow: hidden;
+  min-height: 520px;
+  background: var(--surface);
+}
+
+.graphCard {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.graphHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 18px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface-2);
+  flex-shrink: 0;
+}
+
+.eyebrow {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: .05em;
+  text-transform: uppercase;
+  color: var(--primary);
+  margin-bottom: 2px;
+}
+
+.sectionTitle { font-size: 15px; font-weight: 700; color: var(--text-1); }
+
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px 14px;
+  font-size: 11px;
+  color: var(--text-3);
+}
+
+.legend span { display: inline-flex; align-items: center; gap: 5px; }
+
+.dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; flex-shrink: 0; }
+.mNode { background: #1677ff; }
+.pNode { background: #40a9ff; }
+
+.lineD { display: inline-block; width: 16px; border-top: 2px solid #1677ff; }
+.lineR { display: inline-block; width: 16px; border-top: 2px dashed #faad14; }
+
+/* 响应式 */
+@media (max-width: 1100px) { .statsRow { grid-template-columns: repeat(2, 1fr); } }
+@media (max-width: 860px)  { .workspace { grid-template-columns: 1fr; } }
+@media (max-width: 600px)  { .statsRow { grid-template-columns: 1fr 1fr; } }
+@media (max-width: 400px)  { .statsRow { grid-template-columns: 1fr; } }
 
 .workspace {
   display: grid;

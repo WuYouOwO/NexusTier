@@ -2,16 +2,83 @@
   position: sticky;
   top: 0;
   z-index: 100;
+  height: 56px;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 24px;
-  padding: 0 clamp(16px, 4vw, 48px);
-  height: 60px;
-  background: var(--white);
-  border-bottom: 1px solid var(--line);
-  box-shadow: var(--shadow-sm);
+  padding: 0 24px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  box-shadow: 0 1px 4px rgba(0,0,0,.06);
 }
+
+.left { display: flex; align-items: center; gap: 32px; }
+
+.logo { display: flex; align-items: center; gap: 8px; }
+
+.logoMark {
+  width: 28px; height: 28px;
+  border-radius: 6px;
+  background: var(--primary);
+  color: #fff;
+  font-size: 14px;
+  font-weight: 800;
+  display: flex; align-items: center; justify-content: center;
+}
+
+.logoName {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text-1);
+  letter-spacing: -.3px;
+}
+
+.nav { display: flex; align-items: center; gap: 4px; }
+
+.navItem {
+  padding: 5px 12px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-3);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background .15s, color .15s;
+}
+
+.navItem:hover { background: var(--bg); color: var(--text-1); }
+.navItem.active { background: var(--primary-light); color: var(--primary); font-weight: 600; }
+
+.right { display: flex; align-items: center; gap: 16px; }
+
+.time { font-size: 12px; color: var(--text-3); }
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 10px;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.dot {
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  display: inline-block;
+  flex-shrink: 0;
+}
+
+.connecting .dot { background: var(--warning); animation: blink 1.2s infinite; }
+.connecting { color: var(--warning); background: var(--warning-bg); }
+
+.online .dot { background: var(--success); }
+.online { color: var(--success); background: var(--success-bg); }
+
+.offline .dot { background: var(--danger); }
+.offline { color: var(--danger); background: var(--danger-bg); }
+
+@keyframes blink { 0%,100% { opacity: 1; } 50% { opacity: .35; } }
 
 .brand { display: flex; align-items: baseline; gap: 10px; }
 

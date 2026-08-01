@@ -1,10 +1,92 @@
 .section {
-  background: var(--white);
-  border: 1px solid var(--line);
+  background: var(--surface);
+  border: 1px solid var(--border);
   border-radius: var(--radius);
   box-shadow: var(--shadow-sm);
   overflow: hidden;
 }
+
+.heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 20px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface-2);
+}
+
+.eyebrow {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: .05em;
+  text-transform: uppercase;
+  color: var(--primary);
+  margin-bottom: 2px;
+}
+
+.title { font-size: 15px; font-weight: 700; color: var(--text-1); }
+.count { font-size: 12px; color: var(--text-3); white-space: nowrap; }
+
+.tableWrap { overflow-x: auto; }
+
+.table { width: 100%; border-collapse: collapse; font-size: 13px; }
+
+.table th {
+  padding: 10px 16px;
+  text-align: left;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  color: var(--text-3);
+  background: var(--surface-2);
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+
+.table td {
+  padding: 11px 16px;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+  color: var(--text-1);
+}
+
+.table tbody tr { cursor: pointer; transition: background .1s; }
+.table tbody tr:hover { background: var(--primary-light); }
+.table tbody tr:last-child td { border-bottom: 0; }
+
+.machineName { display: flex; flex-direction: column; gap: 2px; }
+.machineName strong { font-weight: 600; }
+.machineName small  { font-size: 11px; color: var(--text-3); font-family: monospace; }
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 20px;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.active   { color: #389e0d; background: #f6ffed; border: 1px solid #b7eb8f; }
+.inactive { color: #8c6d00; background: #fffbe6; border: 1px solid #ffe58f; }
+
+.empty { padding: 32px; text-align: center; color: var(--text-3); }
+
+.loadMore {
+  display: block;
+  margin: 12px auto;
+  padding: 5px 18px;
+  background: var(--surface);
+  color: var(--primary);
+  border: 1px solid var(--primary);
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  font-weight: 600;
+  transition: background .12s;
+}
+
+.loadMore:hover { background: var(--primary-light); }
 
 .heading {
   display: flex;
