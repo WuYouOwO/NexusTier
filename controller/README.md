@@ -15,8 +15,8 @@ Rust Gateway 的 `nexustier.topology.v1` 契约，在一个 PostgreSQL 事务中
 当前已验证镜像为：
 
 ```text
-ghcr.io/wuyouowo/nexustier-controller:sha-302df2f
-sha256:1d1022885b54fadb83dd60346ef3ed11f35b38ce6a18301f7e684dbc27702362
+ghcr.io/wuyouowo/nexustier-controller:sha-7126599
+sha256:2733ff26be68abd41760f85c6743f486574971efcb8d4e8adfec15a64dfdb789
 ```
 
 ## 能力

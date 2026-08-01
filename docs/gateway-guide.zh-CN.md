@@ -287,7 +287,7 @@ API 当前无认证层，只允许部署在回环地址或可信私有网络。�
 构建镜像：
 
 ```bash
-docker build -t nexustier-gateway:sha-302df2f .
+docker build -t nexustier-gateway:sha-7126599 .
 ```
 
 运行镜像：
@@ -297,7 +297,7 @@ docker run --rm \
   --name nexustier-gateway \
   -p 22020:22020/udp \
   -p 127.0.0.1:11211:11211/tcp \
-  nexustier-gateway:sha-302df2f
+  nexustier-gateway:sha-7126599
 ```
 
 镜像特性：

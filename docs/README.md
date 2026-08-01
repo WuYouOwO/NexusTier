@@ -45,10 +45,10 @@ OIDC/RBAC、IPAM、ACL、网络配置下发、Redis、多副本 HA、历史指�
 
 | 组件 | 当前基线 |
 | --- | --- |
-| 已验证应用提交 | `302df2f429c26a3fefd12a233d4296a7a042dc08` |
-| Gateway 镜像 | `ghcr.io/wuyouowo/nexustier:sha-302df2f` |
-| Controller 镜像 | `ghcr.io/wuyouowo/nexustier-controller:sha-302df2f` |
-| 双镜像发布工作流 | GitHub Actions Run `30542389054` |
+| 已验证应用提交 | `7126599d59efdbba3a17a131cd6208d8ac6e3d8d` |
+| Gateway 镜像 | `ghcr.io/wuyouowo/nexustier:sha-7126599` |
+| Controller 镜像 | `ghcr.io/wuyouowo/nexustier-controller:sha-7126599` |
+| 双镜像发布工作流 | GitHub Actions Run `30686441240` |
 | EasyTier | `v2.6.4` |
 | EasyTier commit | `8428a89d2dabc94c97d370ec607c6ca142473626` |
 | Rust MSRV | `1.95` |

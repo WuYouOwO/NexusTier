@@ -11,11 +11,11 @@ This document is the engineering handoff for an AI agent or developer continuing
 - Gateway package: `nexustier-gateway 0.1.0`
 - Current workspace languages: Rust 2024 edition and Go 1.25
 - Declared Rust MSRV: `1.95`
-- Baseline HEAD for this handoff update: `3c2766c73409b42212169e420d3774b84fc6daa0`
+- Baseline HEAD for this handoff update: `7126599d59efdbba3a17a131cd6208d8ac6e3d8d`
 - Latest implemented telemetry-controller milestone: `302df2f` (Phase 1B)
 - Current maturity: internal Alpha; Phase 1B is complete and Phase 1C security/production hardening is next
 - First complete gateway milestone: `fbc1a9d`
-- Latest verified container workflow run: `30630119629` for `3c2766c` (successful)
+- Latest verified container workflow run: `30686441240` for `7126599` (successful)
 
 Always run `git status --short` and inspect the latest commits before editing. Other agents or the user may commit while work is in progress. Do not rewrite or revert changes you did not create.
 
@@ -435,17 +435,17 @@ The container publication path is operational and has been verified end to end:
 
 The first fully successful publication after the build fixes was run
 `30452969418` for commit `fd554d8`. Phase 1B was first published by run
-`30542389054` for commit `302df2f`. The current publication is run `30630119629`
-for commit `3c2766c`; Rust/Go quality, PostgreSQL integration, both build/push
+`30542389054` for commit `302df2f`. The current publication is run `30686441240`
+for commit `7126599`; Rust/Go quality, PostgreSQL integration, both build/push
 matrix jobs, Cosign signing, and summary publication all passed. The fixed
 images resolve to:
 
 ```text
-ghcr.io/wuyouowo/nexustier:sha-3c2766c
-sha256:3162b1d80bcc8e6b6229544ad00068a064252c4d752d7eac42a56460bb336849
+ghcr.io/wuyouowo/nexustier:sha-7126599
+sha256:c84e5f7a82cc036d89b237c46b8c4d15b8b1c617f30b866adbe86cf819b47fc2
 
-ghcr.io/wuyouowo/nexustier-controller:sha-3c2766c
-sha256:52bc8cfe91257e30207eaae83df414363d6d8dc028c48738b15969f831532604
+ghcr.io/wuyouowo/nexustier-controller:sha-7126599
+sha256:2733ff26be68abd41760f85c6743f486574971efcb8d4e8adfec15a64dfdb789
 ```
 
 The Docker build failures and their fixes were:
@@ -492,7 +492,7 @@ Use `git log --oneline --decorate` for the handoff document's own commit and any
 Real deployment with an official EasyTier GUI v2.6.4 client exposed behavior that the in-process compatibility test could not distinguish:
 
 - A client may register successfully while all four reverse instance RPCs fail with `Invalid CompressionAlgoPb`. The cause was disabling EasyTier default features without re-enabling `zstd`; both sides of the in-process test shared the same reduced feature set and silently negotiated no compression. Commit `3c2766c` enables `zstd`, adds a direct compression/decompression regression test, and raises the expected Gateway test count to 15.
-- Run `30630119629` built, tested, published, and signed the fixed images. A Docker-capable host should still complete the final field check with the official GUI: the latest collection should move from `partial` with four RPC errors to `complete` with Node/Peer/Stats data.
+- Run `30686441240` built, tested, published, and signed the fixed images. A Docker-capable host should still complete the final field check with the official GUI: the latest collection should move from `partial` with four RPC errors to `complete` with Node/Peer/Stats data.
 - For `postgres:18`, the Compose mount `postgres-data:/var/lib/postgresql` is correct. PostgreSQL 18 uses `PGDATA=/var/lib/postgresql/18/docker` and moved its image volume to `/var/lib/postgresql`; do not apply the PostgreSQL 17-and-earlier `/var/lib/postgresql/data` advice.
 - `POSTGRES_PASSWORD` only affects first-time `initdb` on an empty data directory. Regenerating `.env` while retaining `postgres-data` leaves the database role on the old password and causes Controller startup failure with `SQLSTATE 28P01`. Preserve the original `.env` or change the role password interactively with `\password`; delete the volume only when all telemetry data may be discarded.
 - The EasyTier config-server URL is `udp://host:22020/token`. A literal `$` before the token, or unintended shell expansion in a double-quoted URL, causes heartbeat admission failure. With an empty Session Pool, Gateway `/readyz` is `503` and Controller records a complete collection with `machine_count=0` and `error_count=0`.

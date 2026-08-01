@@ -33,15 +33,15 @@ flowchart LR
 
 | 项目 | 当前基线 |
 | --- | --- |
-| 源码提交 | `302df2f429c26a3fefd12a233d4296a7a042dc08` |
-| Gateway 镜像 | `ghcr.io/wuyouowo/nexustier:sha-302df2f` |
-| Gateway digest | `sha256:35ac975021ee951e1b9befaabb71d29adf566ba500b064f15fcf0879363cb3c0` |
-| Controller 镜像 | `ghcr.io/wuyouowo/nexustier-controller:sha-302df2f` |
-| Controller digest | `sha256:1d1022885b54fadb83dd60346ef3ed11f35b38ce6a18301f7e684dbc27702362` |
+| 源码提交 | `7126599d59efdbba3a17a131cd6208d8ac6e3d8d` |
+| Gateway 镜像 | `ghcr.io/wuyouowo/nexustier:sha-7126599` |
+| Gateway digest | `sha256:c84e5f7a82cc036d89b237c46b8c4d15b8b1c617f30b866adbe86cf819b47fc2` |
+| Controller 镜像 | `ghcr.io/wuyouowo/nexustier-controller:sha-7126599` |
+| Controller digest | `sha256:2733ff26be68abd41760f85c6743f486574971efcb8d4e8adfec15a64dfdb789` |
 | EasyTier | `v2.6.4`，commit `8428a89d2dabc94c97d370ec607c6ca142473626` |
 | PostgreSQL | `18-bookworm`；Controller 支持 PostgreSQL `14+` |
 | topology 契约 | `nexustier.topology.v1` |
-| GitHub Actions | Run `30542389054`，质量门禁、双镜像构建、推送和签名均成功 |
+| GitHub Actions | Run `30686441240`，质量门禁、双镜像构建、推送和签名均成功 |
 | 容器平台 | `linux/amd64` |
 
 本文默认固定 SHA 标签，便于同时升级 Gateway 和 Controller。要求更严格的生产环境可把
@@ -98,7 +98,7 @@ ss -lntp | grep -E ':(11211|8080)\b' || true
 ```bash
 git clone https://github.com/WuYouOwO/NexusTier.git
 cd NexusTier
-git checkout 302df2f429c26a3fefd12a233d4296a7a042dc08
+git checkout 7126599d59efdbba3a17a131cd6208d8ac6e3d8d
 git status --short --branch
 ```
 
@@ -124,8 +124,8 @@ POSTGRES_PASSWORD_VALUE="$(openssl rand -hex 32)"
 GATEWAY_TOKEN_VALUE="$(openssl rand -hex 32)"
 
 cat >.env <<EOF
-NEXUSTIER_GATEWAY_IMAGE=ghcr.io/wuyouowo/nexustier:sha-302df2f
-NEXUSTIER_CONTROLLER_IMAGE=ghcr.io/wuyouowo/nexustier-controller:sha-302df2f
+NEXUSTIER_GATEWAY_IMAGE=ghcr.io/wuyouowo/nexustier:sha-7126599
+NEXUSTIER_CONTROLLER_IMAGE=ghcr.io/wuyouowo/nexustier-controller:sha-7126599
 
 POSTGRES_DB=nexustier
 POSTGRES_USER=nexustier
@@ -227,13 +227,13 @@ cosign verify \
   --certificate-identity \
   'https://github.com/WuYouOwO/NexusTier/.github/workflows/docker-publish.yml@refs/heads/main' \
   --certificate-oidc-issuer 'https://token.actions.githubusercontent.com' \
-  'ghcr.io/wuyouowo/nexustier@sha256:35ac975021ee951e1b9befaabb71d29adf566ba500b064f15fcf0879363cb3c0'
+  'ghcr.io/wuyouowo/nexustier@sha256:c84e5f7a82cc036d89b237c46b8c4d15b8b1c617f30b866adbe86cf819b47fc2'
 
 cosign verify \
   --certificate-identity \
   'https://github.com/WuYouOwO/NexusTier/.github/workflows/docker-publish.yml@refs/heads/main' \
   --certificate-oidc-issuer 'https://token.actions.githubusercontent.com' \
-  'ghcr.io/wuyouowo/nexustier-controller@sha256:1d1022885b54fadb83dd60346ef3ed11f35b38ce6a18301f7e684dbc27702362'
+  'ghcr.io/wuyouowo/nexustier-controller@sha256:2733ff26be68abd41760f85c6743f486574971efcb8d4e8adfec15a64dfdb789'
 ```
 
 ## 8. 启动完整栈
