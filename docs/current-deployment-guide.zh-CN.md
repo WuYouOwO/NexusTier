@@ -31,24 +31,25 @@ flowchart LR
 IPAM、ACL、SSH 或 RDP。Gateway 只处理 EasyTier 控制协议和遥测，不转发 EasyTier Mesh
 数据面流量。
 
-> **从 `sha-7126599` 及更早版本升级会中断启动。** Compose 中 Controller 监听
-> `0.0.0.0:8080`，属非回环地址，因此必须先按 6.1 节生成
-> `NEXUSTIER_CONTROLLER_AUTH_PASSWORD_HASH`，否则 Controller 会拒绝启动并在日志中
-> 说明缺失的变量。这是有意的失败关闭：升级不应静默地让控制台继续无认证暴露。
+> **从 `sha-7126599` 及更早版本升级会中断启动。** 那些镜像的控制台没有认证；本版本
+> 起 Controller 要求运维会话。Compose 中 Controller 监听 `0.0.0.0:8080`，属非回环
+> 地址，因此必须先按 6.1 节生成 `NEXUSTIER_CONTROLLER_AUTH_PASSWORD_HASH`，否则
+> Controller 会拒绝启动并在日志中说明缺失的变量。这是有意的失败关闭：升级不应静默
+> 地让控制台继续无认证暴露。升级步骤见 14.1 节。
 
 ## 2. 已验证版本基线
 
 | 项目 | 当前基线 |
 | --- | --- |
-| 源码提交 | `7126599d59efdbba3a17a131cd6208d8ac6e3d8d` |
-| Gateway 镜像 | `ghcr.io/wuyouowo/nexustier:sha-7126599` |
-| Gateway digest | `sha256:c84e5f7a82cc036d89b237c46b8c4d15b8b1c617f30b866adbe86cf819b47fc2` |
-| Controller 镜像 | `ghcr.io/wuyouowo/nexustier-controller:sha-7126599` |
-| Controller digest | `sha256:2733ff26be68abd41760f85c6743f486574971efcb8d4e8adfec15a64dfdb789` |
+| 源码提交 | `0d80c625b0984a8f067bbe9a3957dcab0ce8b35f` |
+| Gateway 镜像 | `ghcr.io/wuyouowo/nexustier:sha-0d80c62` |
+| Gateway digest | `sha256:f13e64bf4501cd0afbea534a192aab099a6d228af1dbd3064e01ea4212500808` |
+| Controller 镜像 | `ghcr.io/wuyouowo/nexustier-controller:sha-0d80c62` |
+| Controller digest | `sha256:52b606a8b96297e03c52194e9708c0db8e552695068299ca6c11444dd4e11b03` |
 | EasyTier | `v2.6.4`，commit `8428a89d2dabc94c97d370ec607c6ca142473626` |
 | PostgreSQL | `18-bookworm`；Controller 支持 PostgreSQL `14+` |
 | topology 契约 | `nexustier.topology.v1` |
-| GitHub Actions | Run `30686441240`，质量门禁、双镜像构建、推送和签名均成功 |
+| GitHub Actions | Run `30737071915`，质量门禁、双镜像构建、推送和签名均成功 |
 | 容器平台 | `linux/amd64` |
 
 本文默认固定 SHA 标签，便于同时升级 Gateway 和 Controller。要求更严格的生产环境可把
@@ -105,7 +106,7 @@ ss -lntp | grep -E ':(11211|8080)\b' || true
 ```bash
 git clone https://github.com/WuYouOwO/NexusTier.git
 cd NexusTier
-git checkout 7126599d59efdbba3a17a131cd6208d8ac6e3d8d
+git checkout 0d80c625b0984a8f067bbe9a3957dcab0ce8b35f
 git status --short --branch
 ```
 
@@ -132,8 +133,8 @@ GATEWAY_TOKEN_VALUE="$(openssl rand -hex 32)"
 SESSION_KEY_VALUE="$(openssl rand -base64 48)"
 
 cat >.env <<EOF
-NEXUSTIER_GATEWAY_IMAGE=ghcr.io/wuyouowo/nexustier:sha-7126599
-NEXUSTIER_CONTROLLER_IMAGE=ghcr.io/wuyouowo/nexustier-controller:sha-7126599
+NEXUSTIER_GATEWAY_IMAGE=ghcr.io/wuyouowo/nexustier:sha-0d80c62
+NEXUSTIER_CONTROLLER_IMAGE=ghcr.io/wuyouowo/nexustier-controller:sha-0d80c62
 
 POSTGRES_DB=nexustier
 POSTGRES_USER=nexustier
@@ -173,7 +174,7 @@ chmod 0600 .env
 接着生成控制台口令哈希。口令从标准输入读取，不会进入进程列表或 shell 历史：
 
 ```bash
-docker run --rm -i ghcr.io/wuyouowo/nexustier-controller:sha-7126599 -hash-password
+docker run --rm -i ghcr.io/wuyouowo/nexustier-controller:sha-0d80c62 -hash-password
 ```
 
 镜像的 ENTRYPOINT 已是控制器二进制，因此只传 `-hash-password`，不要再重复二进制
@@ -273,13 +274,13 @@ cosign verify \
   --certificate-identity \
   'https://github.com/WuYouOwO/NexusTier/.github/workflows/docker-publish.yml@refs/heads/main' \
   --certificate-oidc-issuer 'https://token.actions.githubusercontent.com' \
-  'ghcr.io/wuyouowo/nexustier@sha256:c84e5f7a82cc036d89b237c46b8c4d15b8b1c617f30b866adbe86cf819b47fc2'
+  'ghcr.io/wuyouowo/nexustier@sha256:f13e64bf4501cd0afbea534a192aab099a6d228af1dbd3064e01ea4212500808'
 
 cosign verify \
   --certificate-identity \
   'https://github.com/WuYouOwO/NexusTier/.github/workflows/docker-publish.yml@refs/heads/main' \
   --certificate-oidc-issuer 'https://token.actions.githubusercontent.com' \
-  'ghcr.io/wuyouowo/nexustier-controller@sha256:2733ff26be68abd41760f85c6743f486574971efcb8d4e8adfec15a64dfdb789'
+  'ghcr.io/wuyouowo/nexustier-controller@sha256:52b606a8b96297e03c52194e9708c0db8e552695068299ca6c11444dd4e11b03'
 ```
 
 ## 8. 启动完整栈
@@ -315,18 +316,14 @@ docker compose --env-file .env -f compose.example.yaml logs --tail 100
 
 ## 9. 验证部署
 
-### 9.1 健康和状态 API
+### 9.1 公开健康端点
+
+`/healthz` 和 `/readyz` 不需要会话，供编排层探活：
 
 ```bash
 curl --fail --silent --show-error http://127.0.0.1:11211/healthz | jq
 curl --fail --silent --show-error http://127.0.0.1:8080/healthz | jq
 curl --fail --silent --show-error http://127.0.0.1:8080/readyz | jq
-curl --fail --silent --show-error \
-  http://127.0.0.1:8080/v1/telemetry/status | jq
-curl --fail --silent --show-error \
-  http://127.0.0.1:8080/v1/retention/status | jq
-curl --fail --silent --show-error \
-  'http://127.0.0.1:8080/v1/topology?active=true&limit=100' | jq
 ```
 
 预期：
@@ -334,10 +331,6 @@ curl --fail --silent --show-error \
 - Gateway `/healthz` 返回 `status=ok`。
 - Controller `/healthz` 返回 `status=ok`。
 - Controller `/readyz` 返回 `status=ready`，表示 PostgreSQL 可访问。
-- Controller status 会在启动后出现轮询尝试；尚无客户端时可以成功摄取空拓扑。
-- Controller topology 返回持久化当前状态，而不是触发 Gateway 实时 RPC。
-- 浏览器访问 `http://127.0.0.1:8080/` 可打开内嵌只读拓扑控制台。
-- retention status 显示保留周期、批量大小、最近和累计删除/裁剪数量。
 
 Gateway `/readyz` 在没有 EasyTier 客户端时会返回 `503`，这是合法状态，不表示容器
 不健康：
@@ -346,7 +339,73 @@ Gateway `/readyz` 在没有 EasyTier 客户端时会返回 `503`，这是合法�
 curl --silent --show-error --include http://127.0.0.1:11211/readyz
 ```
 
-### 9.2 验证数据库 migration
+### 9.2 确认认证已生效
+
+Controller 的 `/v1/*` 和控制台需要会话。无会话时应当得到 `401`：
+
+```bash
+curl --silent --output /dev/null --write-out '%{http_code}\n' \
+  http://127.0.0.1:8080/v1/topology
+```
+
+预期输出 `401`。若得到 `200`，说明认证未启用；除了有意设置
+`NEXUSTIER_CONTROLLER_AUTH_MODE=disabled`，这属于配置异常，应立即检查
+`.env` 与 Controller 启动日志。
+
+### 9.3 取得会话并查询状态 API
+
+先用 6.1 节设置的口令登录，把会话 Cookie 写入仅当前用户可读的临时文件：
+
+```bash
+umask 077
+COOKIE_JAR="$(mktemp)"
+read -rsp '控制台口令: ' CONSOLE_PASSWORD && echo
+
+curl --silent --show-error --output /dev/null --write-out '%{http_code}\n' \
+  --cookie-jar "${COOKIE_JAR}" \
+  --data-urlencode "username=admin" \
+  --data-urlencode "password=${CONSOLE_PASSWORD}" \
+  http://127.0.0.1:8080/login
+
+unset CONSOLE_PASSWORD
+```
+
+登录成功返回 `303`。口令通过 `read -rsp` 读取并以 `--data-urlencode` 传入，不会进入
+shell 历史，但仍会短暂出现在进程参数中；共享主机上应改用控制台浏览器登录。
+
+随后带上会话查询：
+
+```bash
+curl --fail --silent --show-error --cookie "${COOKIE_JAR}" \
+  http://127.0.0.1:8080/v1/telemetry/status | jq
+curl --fail --silent --show-error --cookie "${COOKIE_JAR}" \
+  http://127.0.0.1:8080/v1/retention/status | jq
+curl --fail --silent --show-error --cookie "${COOKIE_JAR}" \
+  'http://127.0.0.1:8080/v1/topology?active=true&limit=100' | jq
+curl --fail --silent --show-error --cookie "${COOKIE_JAR}" \
+  http://127.0.0.1:8080/v1/build | jq
+```
+
+预期：
+
+- telemetry status 在启动后出现轮询尝试；尚无客户端时可以成功摄取空拓扑。
+- topology 返回持久化当前状态，而不是触发 Gateway 实时 RPC。
+- retention status 显示保留周期、批量大小、最近和累计删除/裁剪数量。
+- build 返回正在运行的 `version`、`commit`、`build_time`、`go_version` 和 `platform`，
+  其 `commit` 应与 `.env` 中固定的镜像标签一致。
+- 浏览器访问 `http://127.0.0.1:8080/` 会先跳转 `/login`，登录后可打开控制台。
+
+保留 `COOKIE_JAR`，第 11 节的 Controller API 调用会继续复用同一会话；会话默认 `12h`
+过期，之后重新执行本节登录即可。
+
+以上流程也可以直接用运维脚本完成，见 12.4 节：
+
+```bash
+./scripts/nexustier-ops.sh verify
+./scripts/nexustier-ops.sh login-verify
+```
+
+### 9.4 验证数据库 migration
 
 PostgreSQL 不发布宿主机端口，应通过容器内 `psql` 检查：
 
@@ -403,10 +462,10 @@ docker compose --env-file .env -f compose.example.yaml logs --tail 100 gateway
 
 ## 11. 验证 Controller 摄取
 
-等待一个轮询周期后检查状态：
+等待一个轮询周期后检查状态。以下命令沿用 9.3 节建立的 `COOKIE_JAR`：
 
 ```bash
-curl --fail --silent --show-error \
+curl --fail --silent --show-error --cookie "${COOKIE_JAR}" \
   http://127.0.0.1:8080/v1/telemetry/status | jq
 ```
 
@@ -416,7 +475,7 @@ curl --fail --silent --show-error \
 ### 11.1 使用持久化拓扑 API 和控制台
 
 ```bash
-curl --fail --silent --show-error \
+curl --fail --silent --show-error --cookie "${COOKIE_JAR}" \
   'http://127.0.0.1:8080/v1/topology?active=true&limit=100' | jq
 ```
 
@@ -436,13 +495,20 @@ curl --fail --silent --show-error \
 ### 11.2 检查保留状态
 
 ```bash
-curl --fail --silent --show-error \
+curl --fail --silent --show-error --cookie "${COOKIE_JAR}" \
   http://127.0.0.1:8080/v1/retention/status | jq
 ```
 
 默认保留 `720h`。到期的 `metric_samples` 被分批删除，旧 collection 的 raw payload
 裁剪为 JSON `null`；collection 边界、状态、结构化错误和 SHA-256 指纹继续保留，确保
 审计和重复 collection 冲突检测仍有效。
+
+API 验证结束后删除 Cookie 文件，避免会话凭据留在磁盘上：
+
+```bash
+rm -f "${COOKIE_JAR}"
+unset COOKIE_JAR
+```
 
 ### 11.3 使用 SQL 深度排障
 
@@ -607,9 +673,11 @@ docker compose --env-file .env -f compose.example.yaml exec postgres \
 
 1. 备份 `.env` 和 PostgreSQL。
 2. 审核新提交、两个镜像 digest 和 migration。
-3. 在 `.env` 中同时更新 Gateway 和 Controller 镜像引用。
-4. 拉取镜像并重建应用容器。
-5. 验证健康、客户端重连、Controller 状态和数据库最新 collection。
+3. 确认 `.env` 中已有 `NEXUSTIER_CONTROLLER_AUTH_PASSWORD_HASH`。从 `sha-7126599`
+   及更早版本升级时该变量必然缺失，必须先按 6.1 节生成，否则新 Controller 会拒绝启动。
+4. 在 `.env` 中同时更新 Gateway 和 Controller 镜像引用。
+5. 拉取镜像并重建应用容器。
+6. 验证健康、认证、客户端重连、Controller 状态和数据库最新 collection。
 
 ```bash
 docker compose --env-file .env -f compose.example.yaml config --quiet
@@ -618,8 +686,22 @@ docker compose --env-file .env -f compose.example.yaml up -d gateway controller
 docker compose --env-file .env -f compose.example.yaml ps
 ```
 
+升级后用 `/v1/build` 确认运行的确实是目标版本，`commit` 应与镜像标签一致：
+
+```bash
+./scripts/nexustier-ops.sh login-verify
+```
+
 Controller 启动时自动执行 checksummed migrations。不要修改已应用的 migration 文件；
 升级只能新增 migration。
+
+上述步骤也可由运维脚本串起来，它会在升级前做备份和前置检查：
+
+```bash
+./scripts/nexustier-ops.sh upgrade \
+  ghcr.io/wuyouowo/nexustier:sha-0d80c62 \
+  ghcr.io/wuyouowo/nexustier-controller:sha-0d80c62
+```
 
 ### 14.2 回滚
 
@@ -633,13 +715,22 @@ docker compose --env-file .env -f compose.example.yaml up -d gateway controller
 如果新版本已应用数据库 migration，回滚前必须确认旧 Controller 兼容新 schema。当前
 迁移系统没有自动 down migration，不应只回滚镜像而忽略数据库兼容性。
 
+回滚到 `sha-7126599` 及更早版本会同时回滚掉控制台认证，`8080` 将变为无认证可访问。
+只有在确认端口仍限制于回环或 SSH 转发时才可这样做。
+
 ## 15. 防火墙与远程运维
 
 - 只向 EasyTier 客户端开放 UDP `22020`。
 - 禁止公网开放 TCP `11211`、`8080` 和 PostgreSQL。
 - 有固定客户端出口地址时，优先在云安全组或主机防火墙限制 UDP 来源。
 - Gateway 不需要 TUN、`NET_ADMIN`、host network 或特权模式。
-- `.env`、数据库备份和准入 Token 都应按敏感凭据管理。
+- `.env`、数据库备份、准入 Token、控制台口令哈希和 `SESSION_KEY` 都应按敏感凭据管理。
+
+会话 Cookie 默认带 `Secure` 属性。浏览器把 `http://127.0.0.1` 和 `http://localhost`
+视为安全上下文，因此 SSH 转发后用回环地址访问可以正常登录；但如果通过其他主机名走
+纯 HTTP 访问，浏览器会丢弃该 Cookie，表现为登录后立刻跳回 `/login`。此时应继续使用
+回环地址，或在前置 TLS 终端之后访问，而不是把 `NEXUSTIER_CONTROLLER_SECURE_COOKIE`
+改为 `false`。
 
 远程检查内部 API 时使用 SSH 本地转发：
 
@@ -660,6 +751,11 @@ ssh -N \
 | Compose 报 required variable | `.env` 缺少数据库 URL、密码或 Gateway Token；重新执行第 6 节 |
 | PostgreSQL unhealthy | 检查 `postgres` 日志、卷权限、磁盘容量和密码初始化状态 |
 | Controller 启动即退出 | 检查数据库 URL 与密码是否一致、PostgreSQL 是否 healthy |
+| Controller 日志提示缺少口令哈希 | 监听非回环地址却未配置 `AUTH_PASSWORD_HASH`；这是有意的失败关闭，按 6.1 节生成后重启 |
+| `/v1/*` 返回 `401` | 未携带会话或会话已过期；按 9.3 节重新登录取 Cookie |
+| `/login` 返回 `429` | 登录尝试触发按来源 IP 限流；等待 `Retry-After` 秒后重试 |
+| 登录后立刻跳回 `/login` | 非安全上下文丢弃了 `Secure` Cookie；改用回环地址或 TLS 访问，见第 15 节 |
+| 忘记控制台口令 | 用 `./scripts/nexustier-ops.sh rotate-console-password` 重置，无法从哈希反推原口令 |
 | Controller 报 `SQLSTATE 28P01` | 卷中的角色密码早于当前 `.env`；按第 6.2 节改数据库角色密码，不要靠重新生成 `.env` |
 | Gateway `/readyz` 返回 `503` | 尚无安全注册客户端；Gateway `/healthz=200` 时容器仍正常 |
 | 客户端只有能力探测 | 检查 Noise 安全重连、Token、UDP 22020、NAT 和 EasyTier v2.6.4 |
@@ -698,6 +794,8 @@ docker compose --env-file .env -f compose.example.yaml down --volumes
 - [ ] 源码、Gateway 镜像和 Controller 镜像固定到同一审核版本。
 - [ ] 两个应用镜像 digest 已记录，必要时已验证 Cosign 签名。
 - [ ] `.env` 权限为 `0600`，密码和 Token 未进入仓库或日志。
+- [ ] `NEXUSTIER_CONTROLLER_AUTH_PASSWORD_HASH` 已生成，明文口令另行妥善保管。
+- [ ] `NEXUSTIER_CONTROLLER_SESSION_KEY` 为固定随机值，不依赖每次启动重新生成。
 - [ ] `docker compose ... config --quiet` 通过。
 - [ ] 只开放 UDP `22020`，内部端口保持回环或 Compose 私网。
 - [ ] PostgreSQL 备份和容量监测方案已准备。
@@ -707,7 +805,9 @@ docker compose --env-file .env -f compose.example.yaml down --volumes
 - [ ] 三个服务均为 `Up`/healthy。
 - [ ] Gateway `/healthz` 返回 `200`。
 - [ ] Controller `/healthz` 和 `/readyz` 返回 `200`。
-- [ ] Controller `/v1/topology` 返回持久化 Machine/Peer，根路径控制台可打开。
+- [ ] 无会话访问 `/v1/topology` 返回 `401`。
+- [ ] 用运维口令登录后 `/v1/topology` 返回持久化 Machine/Peer，控制台可打开。
+- [ ] `/v1/build` 的 `commit` 与部署所固定的镜像标签一致。
 - [ ] `/v1/retention/status` 无错误且保留参数符合容量策略。
 - [ ] EasyTier 接入后 Gateway `/readyz` 返回 `200`。
 - [ ] Gateway 日志显示 `secure=true` Session，API 不包含 Token。

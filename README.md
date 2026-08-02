@@ -113,11 +113,11 @@ Go 控制器遥测摄取基础可作为完整遥测链路运行：
 
 | 组件 | 镜像 | Digest |
 | --- | --- | --- |
-| Gateway | `ghcr.io/wuyouowo/nexustier:sha-7126599` | `sha256:c84e5f7a82cc036d89b237c46b8c4d15b8b1c617f30b866adbe86cf819b47fc2` |
-| Controller | `ghcr.io/wuyouowo/nexustier-controller:sha-7126599` | `sha256:2733ff26be68abd41760f85c6743f486574971efcb8d4e8adfec15a64dfdb789` |
+| Gateway | `ghcr.io/wuyouowo/nexustier:sha-0d80c62` | `sha256:f13e64bf4501cd0afbea534a192aab099a6d228af1dbd3064e01ea4212500808` |
+| Controller | `ghcr.io/wuyouowo/nexustier-controller:sha-0d80c62` | `sha256:52b606a8b96297e03c52194e9708c0db8e552695068299ca6c11444dd4e11b03` |
 
-该基线对应提交 `7126599d59efdbba3a17a131cd6208d8ac6e3d8d` 和成功的 GitHub
-Actions Run `30686441240`。两个镜像均为 `linux/amd64` OCI image index，并使用
+该基线对应提交 `0d80c625b0984a8f067bbe9a3957dcab0ce8b35f` 和成功的 GitHub
+Actions Run `30737071915`。两个镜像均为 `linux/amd64` OCI image index，并使用
 GitHub OIDC + Cosign 签名。
 
 开发运行：

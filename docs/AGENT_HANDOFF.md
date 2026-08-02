@@ -11,11 +11,11 @@ This document is the engineering handoff for an AI agent or developer continuing
 - Gateway package: `nexustier-gateway 0.1.0`
 - Current workspace languages: Rust 2024 edition and Go 1.25
 - Declared Rust MSRV: `1.95`
-- Baseline HEAD for this handoff update: `7126599d59efdbba3a17a131cd6208d8ac6e3d8d`
+- Baseline HEAD for this handoff update: `0d80c625b0984a8f067bbe9a3957dcab0ce8b35f`
 - Latest implemented telemetry-controller milestone: `302df2f` (Phase 1B)
 - Current maturity: internal Alpha; Phase 1B is complete and Phase 1C security/production hardening is in progress
 - First complete gateway milestone: `fbc1a9d`
-- Latest verified container workflow run: `30686441240` for `7126599` (successful)
+- Latest verified container workflow run: `30737071915` for `0d80c62` (successful)
 
 Always run `git status --short` and inspect the latest commits before editing. Other agents or the user may commit while work is in progress. Do not rewrite or revert changes you did not create.
 
@@ -458,18 +458,23 @@ The container publication path is operational and has been verified end to end:
 
 The first fully successful publication after the build fixes was run
 `30452969418` for commit `fd554d8`. Phase 1B was first published by run
-`30542389054` for commit `302df2f`. The current publication is run `30686441240`
-for commit `7126599`; Rust/Go quality, PostgreSQL integration, both build/push
-matrix jobs, Cosign signing, and summary publication all passed. The fixed
+`30542389054` for commit `302df2f`. The current publication is run `30737071915`
+for commit `0d80c62`; Rust/Go quality, PostgreSQL integration, both build/push
+matrix jobs, Cosign signing, and summary publication all passed. The current
 images resolve to:
 
 ```text
-ghcr.io/wuyouowo/nexustier:sha-7126599
-sha256:c84e5f7a82cc036d89b237c46b8c4d15b8b1c617f30b866adbe86cf819b47fc2
+ghcr.io/wuyouowo/nexustier:sha-0d80c62
+sha256:f13e64bf4501cd0afbea534a192aab099a6d228af1dbd3064e01ea4212500808
 
-ghcr.io/wuyouowo/nexustier-controller:sha-7126599
-sha256:2733ff26be68abd41760f85c6743f486574971efcb8d4e8adfec15a64dfdb789
+ghcr.io/wuyouowo/nexustier-controller:sha-0d80c62
+sha256:52b606a8b96297e03c52194e9708c0db8e552695068299ca6c11444dd4e11b03
 ```
+
+`sha-0d80c62` is the first published baseline that requires an operator session
+on the Controller. Because Compose binds the Controller to `0.0.0.0:8080`,
+upgrading from `sha-7126599` or earlier fails closed until
+`NEXUSTIER_CONTROLLER_AUTH_PASSWORD_HASH` is present in `.env`.
 
 The Docker build failures and their fixes were:
 
@@ -507,6 +512,11 @@ Notable history:
 | `302df2f` | Phase 1B persistent topology API, retention, embedded console, tests, and packaging |
 | `d8ec0f2` | PostgreSQL repeated-deployment password guidance and `SQLSTATE 28P01` troubleshooting |
 | `3c2766c` | Enable required EasyTier Zstd RPC support and add a compression regression test |
+| `b2fd11d` | Chinese console localization and redesigned embedded UI |
+| `4f8ba94` | Converged topology force layout and live details panel |
+| `906c3e0` | Build identity endpoint `GET /v1/build` |
+| `fddec1c` | Operator session guard for the console and `/v1` API |
+| `0d80c62` | Compose operations script with a stubbed test harness |
 
 Use `git log --oneline --decorate` for the handoff document's own commit and any newer work.
 
@@ -515,7 +525,7 @@ Use `git log --oneline --decorate` for the handoff document's own commit and any
 Real deployment with an official EasyTier GUI v2.6.4 client exposed behavior that the in-process compatibility test could not distinguish:
 
 - A client may register successfully while all four reverse instance RPCs fail with `Invalid CompressionAlgoPb`. The cause was disabling EasyTier default features without re-enabling `zstd`; both sides of the in-process test shared the same reduced feature set and silently negotiated no compression. Commit `3c2766c` enables `zstd`, adds a direct compression/decompression regression test, and raises the expected Gateway test count to 15.
-- Run `30686441240` built, tested, published, and signed the fixed images. A Docker-capable host should still complete the final field check with the official GUI: the latest collection should move from `partial` with four RPC errors to `complete` with Node/Peer/Stats data.
+- Run `30686441240` built, tested, published, and signed the images carrying the Zstd fix, and the current `sha-0d80c62` baseline still contains it. A Docker-capable host should still complete the final field check with the official GUI: the latest collection should move from `partial` with four RPC errors to `complete` with Node/Peer/Stats data. That check now requires logging in first, because `/v1` returns `401` without an operator session.
 - For `postgres:18`, the Compose mount `postgres-data:/var/lib/postgresql` is correct. PostgreSQL 18 uses `PGDATA=/var/lib/postgresql/18/docker` and moved its image volume to `/var/lib/postgresql`; do not apply the PostgreSQL 17-and-earlier `/var/lib/postgresql/data` advice.
 - `POSTGRES_PASSWORD` only affects first-time `initdb` on an empty data directory. Regenerating `.env` while retaining `postgres-data` leaves the database role on the old password and causes Controller startup failure with `SQLSTATE 28P01`. Preserve the original `.env` or change the role password interactively with `\password`; delete the volume only when all telemetry data may be discarded.
 - The EasyTier config-server URL is `udp://host:22020/token`. A literal `$` before the token, or unintended shell expansion in a double-quoted URL, causes heartbeat admission failure. With an empty Session Pool, Gateway `/readyz` is `503` and Controller records a complete collection with `machine_count=0` and `error_count=0`.

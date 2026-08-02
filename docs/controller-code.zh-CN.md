@@ -182,7 +182,7 @@ API 和控制台由 `internal/auth` 的运维会话保护：PBKDF2-HMAC-SHA256 �
 - Web UI 首页/资产、安全响应头、未知路由；桌面和手机视口的 SVG、点击和溢出检查。
 - 真实进程 migration 002、首次轮询、五个 API/UI 路径、数据库写入与 SIGTERM 烟测。
 
-当前发布提交 `7126599` 的 GitHub Actions Run `30686441240` 已验证 Rust、Go、
+当前发布提交 `0d80c62` 的 GitHub Actions Run `30737071915` 已验证 Rust、Go、
 PostgreSQL 集成、Gateway/Controller 镜像发布与 Cosign 签名。
 
 ## 12. 当前限制与下一步

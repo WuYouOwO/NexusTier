@@ -5,8 +5,9 @@ Rust Gateway 的 `nexustier.topology.v1` 契约，在一个 PostgreSQL 事务中
 更新当前拓扑、追加指标样本并记录采集错误。它还从规范化表提供当前拓扑 API、内嵌
 只读控制台，并按配置清理过期指标和原始 payload。
 
-该模块通过 GitHub Actions 构建并发布 GHCR 镜像。它提供内部只读拓扑查询，但不是
-经过认证的公开控制面 API：不提供 Redis、WebSocket、IPAM、ACL 或配置下发。
+该模块通过 GitHub Actions 构建并发布 GHCR 镜像。控制台和 `/v1/*` 由单运维账号的
+会话保护，但仍不是多租户公开控制面 API：不提供授权模型、租户隔离、审计日志、Redis、
+WebSocket、IPAM、ACL 或配置下发。
 
 完整安装 Gateway、Controller 和 PostgreSQL 请使用
 [当前版本端到端部署指南](../docs/current-deployment-guide.zh-CN.md)；接入节点、
@@ -15,8 +16,8 @@ Rust Gateway 的 `nexustier.topology.v1` 契约，在一个 PostgreSQL 事务中
 当前已验证镜像为：
 
 ```text
-ghcr.io/wuyouowo/nexustier-controller:sha-7126599
-sha256:2733ff26be68abd41760f85c6743f486574971efcb8d4e8adfec15a64dfdb789
+ghcr.io/wuyouowo/nexustier-controller:sha-0d80c62
+sha256:52b606a8b96297e03c52194e9708c0db8e552695068299ca6c11444dd4e11b03
 ```
 
 ## 能力
@@ -31,7 +32,9 @@ sha256:2733ff26be68abd41760f85c6743f486574971efcb8d4e8adfec15a64dfdb789
 - PostgreSQL migrations 使用 advisory lock、事务和 SHA-256 checksum。
 - 当前拓扑查询按 Machine UUID 稳定分页，支持 active、machine_id、cursor 和 limit 参数。
 - 返回最新 collection 新鲜度、结构化错误，以及嵌套 Machine/Instance/Node/Peer 状态。
-- 在 `/` 内嵌响应式拓扑控制台，无 CDN、Node.js 或额外前端容器依赖。
+- 在 `/` 内嵌响应式中文拓扑控制台，无 CDN、Node.js 或额外前端容器依赖。
+- 控制台与 `/v1/*` 由运维会话保护：PBKDF2-HMAC-SHA256 口令哈希、HMAC 签名 Cookie、按来源 IP 限流登录。
+- `GET /v1/build` 返回运行中的 version、commit、build_time、go_version 和 platform。
 - 默认保留 720 小时指标和原始 payload；分批清理后仍保留 collection 元数据、错误与 SHA-256 指纹。
 - 提供 JSON 结构化日志和 SIGINT/SIGTERM 优雅关闭。
 

@@ -46,14 +46,14 @@ Mesh 路由收敛。
 
 | 组件 | 当前基线 |
 | --- | --- |
-| 已验证应用提交 | `7126599d59efdbba3a17a131cd6208d8ac6e3d8d` |
-| Gateway 镜像 | `ghcr.io/wuyouowo/nexustier:sha-7126599` |
-| Controller 镜像 | `ghcr.io/wuyouowo/nexustier-controller:sha-7126599` |
-| 双镜像发布工作流 | GitHub Actions Run `30686441240` |
+| 已验证应用提交 | `0d80c625b0984a8f067bbe9a3957dcab0ce8b35f` |
+| Gateway 镜像 | `ghcr.io/wuyouowo/nexustier:sha-0d80c62` |
+| Controller 镜像 | `ghcr.io/wuyouowo/nexustier-controller:sha-0d80c62` |
+| 双镜像发布工作流 | GitHub Actions Run `30737071915` |
 | EasyTier | `v2.6.4` |
 | EasyTier commit | `8428a89d2dabc94c97d370ec607c6ca142473626` |
 | Rust MSRV | `1.95` |
-| Go Controller | Phase 1B 遥测查询与控制台，Go `1.25` |
+| Go Controller | 遥测查询、中文控制台与运维会话，Go `1.25` |
 | PostgreSQL 验证基线 | `18.4` |
 | 容器平台 | `linux/amd64` |
 | 许可证 | AGPLv3 |

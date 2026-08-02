@@ -3,7 +3,7 @@
 ## 1. 当前版本能做什么
 
 本文面向已经按[Docker Compose 部署指南](current-deployment-guide.zh-CN.md)启动
-Gateway、Controller 和 PostgreSQL 的用户。当前 Phase 1B 可以：
+Gateway、Controller 和 PostgreSQL 的用户。当前版本可以：
 
 - 让未修改的 EasyTier v2.6.4 客户端安全注册到 Gateway。
 - 查看 Gateway 当前在线 Session 和实时反向 RPC 拓扑。

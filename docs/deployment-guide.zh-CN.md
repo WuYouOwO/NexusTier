@@ -18,9 +18,9 @@
 | 项目 | 当前状态 |
 | --- | --- |
 | 网关版本 | `0.1.0` |
-| 当前发布提交 | `7126599d59efdbba3a17a131cd6208d8ac6e3d8d` |
-| 当前固定镜像 | `ghcr.io/wuyouowo/nexustier:sha-7126599` |
-| 当前镜像 digest | `sha256:c84e5f7a82cc036d89b237c46b8c4d15b8b1c617f30b866adbe86cf819b47fc2` |
+| 当前发布提交 | `0d80c625b0984a8f067bbe9a3957dcab0ce8b35f` |
+| 当前固定镜像 | `ghcr.io/wuyouowo/nexustier:sha-0d80c62` |
+| 当前镜像 digest | `sha256:f13e64bf4501cd0afbea534a192aab099a6d228af1dbd3064e01ea4212500808` |
 | EasyTier 协议基线 | `v2.6.4` |
 | EasyTier commit | `8428a89d2dabc94c97d370ec607c6ca142473626` |
 | 原生验证环境 | Debian 13 x86-64，systemd 257 |
@@ -28,7 +28,7 @@
 | 原生 release 构建 | 已验证 |
 | HTTP 与优雅关闭烟测 | 已验证 |
 | Dockerfile | 已提供并完成静态审查 |
-| Docker 镜像构建/推送/签名 | GitHub Actions Run `30686441240` 已验证 |
+| Docker 镜像构建/推送/签名 | GitHub Actions Run `30737071915` 已验证 |
 | Kubernetes 与多副本 HA | 当前不支持 |
 
 原生构建得到的是动态链接 ELF。应在目标系统或不高于目标 glibc 版本的兼容构建环境中编译。不要把 Debian 13 上构建的二进制直接假定为兼容所有旧发行版。
@@ -112,12 +112,12 @@ cargo --version
 ```bash
 git clone https://github.com/WuYouOwO/NexusTier.git
 cd NexusTier
-git checkout 7126599d59efdbba3a17a131cd6208d8ac6e3d8d
+git checkout 0d80c625b0984a8f067bbe9a3957dcab0ce8b35f
 git status --short
 git log -3 --oneline --decorate
 ```
 
-当前文档固定到 `302df2f`。生产构建应使用经过审核的 commit，并保留其 SHA；升级时
+当前文档固定到 `0d80c62`。生产构建应使用经过审核的 commit，并保留其 SHA；升级时
 显式替换为新的审核提交，不要在部署过程中自动跟随未知的远端最新提交。
 
 ### 5.3 执行质量检查
@@ -481,9 +481,9 @@ ghcr.io/wuyouowo/nexustier
 拉取当前固定镜像：
 
 ```bash
-docker pull ghcr.io/wuyouowo/nexustier:sha-7126599
+docker pull ghcr.io/wuyouowo/nexustier:sha-0d80c62
 docker pull \
-  ghcr.io/wuyouowo/nexustier@sha256:c84e5f7a82cc036d89b237c46b8c4d15b8b1c617f30b866adbe86cf819b47fc2
+  ghcr.io/wuyouowo/nexustier@sha256:f13e64bf4501cd0afbea534a192aab099a6d228af1dbd3064e01ea4212500808
 ```
 
 安装 Cosign 后验证发布者身份：
@@ -493,7 +493,7 @@ cosign verify \
   --certificate-identity \
   'https://github.com/WuYouOwO/NexusTier/.github/workflows/docker-publish.yml@refs/heads/main' \
   --certificate-oidc-issuer 'https://token.actions.githubusercontent.com' \
-  'ghcr.io/wuyouowo/nexustier@sha256:c84e5f7a82cc036d89b237c46b8c4d15b8b1c617f30b866adbe86cf819b47fc2'
+  'ghcr.io/wuyouowo/nexustier@sha256:f13e64bf4501cd0afbea534a192aab099a6d228af1dbd3064e01ea4212500808'
 ```
 
 ### 10.1 构建镜像
@@ -530,7 +530,7 @@ sudo docker run -d \
   --env-file /etc/nexustier/gateway.env \
   -p 22020:22020/udp \
   -p 127.0.0.1:11211:11211/tcp \
-  ghcr.io/wuyouowo/nexustier@sha256:c84e5f7a82cc036d89b237c46b8c4d15b8b1c617f30b866adbe86cf819b47fc2
+  ghcr.io/wuyouowo/nexustier@sha256:f13e64bf4501cd0afbea534a192aab099a6d228af1dbd3064e01ea4212500808
 ```
 
 镜像内 API 绑定 `0.0.0.0:11211`，但端口发布只绑定宿主机 `127.0.0.1`。Dockerfile 声明 `STOPSIGNAL SIGINT`，`docker stop` 会进入网关优雅关闭流程。

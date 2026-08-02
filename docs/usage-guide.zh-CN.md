@@ -11,11 +11,11 @@
 | 项目 | 当前值 |
 | --- | --- |
 | NexusTier Gateway | `0.1.0` |
-| 源码提交 | `7126599d59efdbba3a17a131cd6208d8ac6e3d8d` |
+| 源码提交 | `0d80c625b0984a8f067bbe9a3957dcab0ce8b35f` |
 | EasyTier 兼容基线 | `v2.6.4` |
 | 容器仓库 | `ghcr.io/wuyouowo/nexustier` |
-| 固定镜像标签 | `sha-7126599` |
-| 发布镜像 digest | `sha256:c84e5f7a82cc036d89b237c46b8c4d15b8b1c617f30b866adbe86cf819b47fc2` |
+| 固定镜像标签 | `sha-0d80c62` |
+| 发布镜像 digest | `sha256:f13e64bf4501cd0afbea534a192aab099a6d228af1dbd3064e01ea4212500808` |
 | EasyTier 控制通道 | `22020/UDP` |
 | 本地只读 API | `127.0.0.1:11211/TCP` |
 
@@ -57,14 +57,14 @@
 直接使用当前稳定发布：
 
 ```bash
-docker pull ghcr.io/wuyouowo/nexustier:sha-7126599
+docker pull ghcr.io/wuyouowo/nexustier:sha-0d80c62
 ```
 
 需要完全固定构建产物时使用 digest：
 
 ```bash
 docker pull \
-  ghcr.io/wuyouowo/nexustier@sha256:c84e5f7a82cc036d89b237c46b8c4d15b8b1c617f30b866adbe86cf819b47fc2
+  ghcr.io/wuyouowo/nexustier@sha256:f13e64bf4501cd0afbea534a192aab099a6d228af1dbd3064e01ea4212500808
 ```
 
 `latest` 跟随 `main` 更新，适合体验，不建议作为无人值守生产部署的唯一版本约束。
@@ -76,7 +76,7 @@ cosign verify \
   --certificate-identity \
   'https://github.com/WuYouOwO/NexusTier/.github/workflows/docker-publish.yml@refs/heads/main' \
   --certificate-oidc-issuer 'https://token.actions.githubusercontent.com' \
-  'ghcr.io/wuyouowo/nexustier@sha256:c84e5f7a82cc036d89b237c46b8c4d15b8b1c617f30b866adbe86cf819b47fc2'
+  'ghcr.io/wuyouowo/nexustier@sha256:f13e64bf4501cd0afbea534a192aab099a6d228af1dbd3064e01ea4212500808'
 ```
 
 ### 2.3 启动容器
@@ -102,7 +102,7 @@ docker run -d \
   --env-file ./gateway.env \
   -p 22020:22020/udp \
   -p 127.0.0.1:11211:11211/tcp \
-  ghcr.io/wuyouowo/nexustier@sha256:c84e5f7a82cc036d89b237c46b8c4d15b8b1c617f30b866adbe86cf819b47fc2
+  ghcr.io/wuyouowo/nexustier@sha256:f13e64bf4501cd0afbea534a192aab099a6d228af1dbd3064e01ea4212500808
 ```
 
 镜像使用 UID `10001` 的非 root 用户，不创建 TUN 设备，也不需要 `NET_ADMIN` 或其他额外 capabilities。
@@ -290,7 +290,7 @@ docker logs --follow nexustier-gateway
 ```bash
 docker run ... \
   -e NEXUSTIER_GATEWAY_RPC_TIMEOUT_MS=10000 \
-  ghcr.io/wuyouowo/nexustier:sha-7126599
+  ghcr.io/wuyouowo/nexustier:sha-0d80c62
 ```
 
 默认值为 `5000` 毫秒。该超时分别应用到每次反向 RPC，不是整份拓扑请求的总超时。
