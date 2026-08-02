@@ -38,8 +38,9 @@ topology v1 轮询、校验、PostgreSQL 持久化、当前拓扑查询、指标
 节点之间的数据包不经过 NexusTier，继续由 EasyTier 数据面完成 NAT 穿透、加密传输和
 Mesh 路由收敛。
 
-当前控制台和 API 无认证，只能位于回环地址或可信私网；不提供多租户公开 API、
-OIDC/RBAC、IPAM、ACL、网络配置下发、Redis、多副本 HA、历史指标查询或数据库分区。
+控制台和 API 要求单运维会话，但没有授权模型、租户隔离或审计日志，仍只能位于回环
+地址或可信私网；不提供多租户公开 API、OIDC/RBAC、IPAM、ACL、网络配置下发、Redis、
+多副本 HA、历史指标查询或数据库分区。
 
 ## 版本基线
 

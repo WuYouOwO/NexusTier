@@ -23,11 +23,18 @@ flowchart LR
 - 通过 `nexustier.topology.v1` 契约把实时拓扑交给 Controller。
 - 将机器、实例、节点、当前 Peer 链路、指标和采集错误写入 PostgreSQL。
 - 从规范化表查询持久化当前拓扑、collection 新鲜度和结构化错误。
-- 在 Controller 根路径查看内嵌响应式拓扑控制台。
+- 在 Controller 根路径查看内嵌响应式拓扑控制台，访问前需以运维账号登录。
 - 定期批量清理过期指标和原始 payload，同时保留审计元数据和 SHA-256 指纹。
 
-当前仍不包含认证/多租户公开控制台、Redis、OIDC/RBAC、IPAM、ACL、SSH 或 RDP。Gateway
-只处理 EasyTier 控制协议和遥测，不转发 EasyTier Mesh 数据面流量。
+控制台和 Controller API 由单一运维账号的会话保护：口令以 PBKDF2-HMAC-SHA256 存储，
+会话为 HMAC 签名 Cookie，登录尝试按来源 IP 限流。仍不包含多租户、Redis、OIDC/RBAC、
+IPAM、ACL、SSH 或 RDP。Gateway 只处理 EasyTier 控制协议和遥测，不转发 EasyTier Mesh
+数据面流量。
+
+> **从 `sha-7126599` 及更早版本升级会中断启动。** Compose 中 Controller 监听
+> `0.0.0.0:8080`，属非回环地址，因此必须先按 6.1 节生成
+> `NEXUSTIER_CONTROLLER_AUTH_PASSWORD_HASH`，否则 Controller 会拒绝启动并在日志中
+> 说明缺失的变量。这是有意的失败关闭：升级不应静默地让控制台继续无认证暴露。
 
 ## 2. 已验证版本基线
 
@@ -122,6 +129,7 @@ test -f .env.example
 umask 077
 POSTGRES_PASSWORD_VALUE="$(openssl rand -hex 32)"
 GATEWAY_TOKEN_VALUE="$(openssl rand -hex 32)"
+SESSION_KEY_VALUE="$(openssl rand -base64 48)"
 
 cat >.env <<EOF
 NEXUSTIER_GATEWAY_IMAGE=ghcr.io/wuyouowo/nexustier:sha-7126599
@@ -150,11 +158,35 @@ NEXUSTIER_CONTROLLER_SHUTDOWN_TIMEOUT=10s
 NEXUSTIER_CONTROLLER_METRIC_RETENTION=720h
 NEXUSTIER_CONTROLLER_CLEANUP_INTERVAL=6h
 NEXUSTIER_CONTROLLER_CLEANUP_BATCH_SIZE=10000
+
+NEXUSTIER_CONTROLLER_AUTH_USERNAME=admin
+NEXUSTIER_CONTROLLER_SESSION_KEY=${SESSION_KEY_VALUE}
 EOF
 
-unset POSTGRES_PASSWORD_VALUE GATEWAY_TOKEN_VALUE
+unset POSTGRES_PASSWORD_VALUE GATEWAY_TOKEN_VALUE SESSION_KEY_VALUE
 chmod 0600 .env
 ```
+
+会话密钥可省略；省略时 Controller 每次启动随机生成，重启即注销所有会话。设置固定值
+可让会话跨重启存活，长度至少 32 字节。
+
+接着生成控制台口令哈希。口令从标准输入读取，不会进入进程列表或 shell 历史：
+
+```bash
+docker run --rm -i ghcr.io/wuyouowo/nexustier-controller:sha-7126599 -hash-password
+```
+
+镜像的 ENTRYPOINT 已是控制器二进制，因此只传 `-hash-password`，不要再重复二进制
+路径；否则它会成为位置参数，标志不会生效。
+
+交互输入口令后回车，命令会打印形如 `pbkdf2-sha256$600000$...` 的哈希。把它写入
+`.env`：
+
+```bash
+printf 'NEXUSTIER_CONTROLLER_AUTH_PASSWORD_HASH=%s\n' '<粘贴上一步的哈希>' >> .env
+```
+
+哈希本身不可逆，但它是登录凭据的唯一校验依据，仍应按机密对待。`.env` 权限保持 `600`。
 
 `.env` 已被仓库 `.gitignore` 忽略，但仍应确认没有意外暂存：
 
@@ -181,10 +213,24 @@ stat -c '%a %n' .env
 | `NEXUSTIER_CONTROLLER_METRIC_RETENTION` | 指标样本和 collection 原始 payload 保留时间 |
 | `NEXUSTIER_CONTROLLER_CLEANUP_INTERVAL` | 后台保留清理周期 |
 | `NEXUSTIER_CONTROLLER_CLEANUP_BATCH_SIZE` | 每批删除或裁剪的最大行数 |
+| `NEXUSTIER_CONTROLLER_AUTH_USERNAME` | 控制台登录用户名，默认 `admin` |
+| `NEXUSTIER_CONTROLLER_AUTH_PASSWORD_HASH` | 由 `-hash-password` 生成的口令哈希 |
+| `NEXUSTIER_CONTROLLER_SESSION_KEY` | 会话签名密钥，留空则每次启动轮换 |
+| `NEXUSTIER_CONTROLLER_SESSION_TTL` | 会话有效期，默认 `12h` |
+| `NEXUSTIER_CONTROLLER_AUTH_MODE` | `auto`（默认）/ `required` / `disabled` |
+| `NEXUSTIER_CONTROLLER_SECURE_COOKIE` | 默认 `true`；仅在非 localhost 的纯 HTTP 访问下设为 `false` |
 
 `POSTGRES_PASSWORD` 与数据库 URL 中的密码必须一致。若手工使用含 URL 保留字符的密码，
 必须只对 URL 中的密码部分做百分号编码。不要把两个 API bind 改为公网地址，除非外层
 已经提供经过审计的认证代理和网络访问控制。
+
+`NEXUSTIER_CONTROLLER_AUTH_MODE` 三档的判定规则：`auto` 在监听地址为回环时放行、非回环
+时强制要求凭据；`required` 始终要求凭据；`disabled` 完全关闭认证。只有当外层已经存在
+经过审计的认证代理时才使用 `disabled`，此时 Controller 会在启动日志中持续告警。
+
+浏览器把 `http://localhost` 视为安全上下文，因此通过 SSH 端口转发访问时
+`NEXUSTIER_CONTROLLER_SECURE_COOKIE` 保持默认 `true` 即可正常登录。只有在以纯 HTTP
+访问非 localhost 主机名时才需要改为 `false`，且这会让会话 Cookie 明文传输。
 
 `POSTGRES_PASSWORD` 只在数据目录为空、PostgreSQL 首次执行 `initdb` 时生效。若
 `postgres-data` 卷已经存在，重新生成 `.env` 不会改变数据库中已有的角色密码，
@@ -382,9 +428,10 @@ curl --fail --silent --show-error \
 - `cursor=<uuid>`：从该 Machine UUID 之后继续读取。
 - `limit=1..500`：每页 Machine 数，默认 `100`。
 
-浏览器打开 `http://127.0.0.1:8080/` 后，可查看连接图、Machine 清单、Peer RTT、
-丢包、流量、collection 新鲜度和结构化错误。该页面无认证且与 API 同源，只允许回环
-或 SSH 转发访问。
+浏览器打开 `http://127.0.0.1:8080/` 后先跳转到 `/login`，使用 `.env` 中配置的用户名
+和对应明文密码登录，之后可查看连接图、Machine 清单、Peer RTT、丢包、流量、collection
+新鲜度和结构化错误。会话为单账号，没有租户隔离或审计日志，因此仍只允许回环或 SSH
+转发访问。
 
 ### 11.2 检查保留状态
 

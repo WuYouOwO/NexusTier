@@ -12,9 +12,11 @@ Gateway、Controller 和 PostgreSQL 的用户。当前 Phase 1B 可以：
 - 查看最新 collection 新鲜度、结构化错误、摄取状态和指标保留状态。
 - 自动删除过期指标样本并裁剪过期 collection 原始 payload。
 
-当前仍不提供公开多租户控制台、登录、OIDC/RBAC、IPAM、ACL、网络配置下发、
-Redis、多副本 HA、历史指标图表或 PostgreSQL 分区。所有 HTTP 页面和 API 都没有
-认证，只能位于宿主机回环地址或可信私网。
+控制台和 `/v1` API 由单运维账号的会话守卫保护。当前仍不提供多租户、OIDC/RBAC、
+IPAM、ACL、网络配置下发、Redis、多副本 HA、历史指标图表或 PostgreSQL 分区。
+
+单账号会话是最小可用边界，不是完整的身份体系。即使已启用认证，仍建议按第 10 节
+用 SSH 转发访问，不要把 `8080` 直接开放到互联网。
 
 ## 2. 开始前确认
 
@@ -153,11 +155,24 @@ http://127.0.0.1:8080/
 - 当前 Machine 清单、active 过滤、文本过滤和自动刷新。
 - 最新 collection 的状态和结构化错误。
 
-页面由 Controller 二进制内嵌提供，不依赖 CDN、Node.js 或额外前端容器。页面和 JSON
-API 都设置 `Cache-Control: no-store`；页面还设置 CSP、禁止 frame 嵌入和 MIME 嗅探。
+页面由 Controller 二进制内嵌提供，不依赖 CDN 或额外前端容器。页面和 JSON API 都设置
+`Cache-Control: no-store`；页面还设置 CSP、禁止 frame 嵌入和 MIME 嗅探。
 
-控制台不是认证边界。远程运维必须使用第 10 节的 SSH 转发，不能把 `8080` 直接开放
-到互联网。
+### 5.1 登录
+
+除 `auth_mode=disabled` 外，首次访问会跳转到 `/login`。输入 `.env` 中
+`NEXUSTIER_CONTROLLER_AUTH_USERNAME` 对应的用户名和生成哈希时使用的原始密码。
+登录成功后浏览器保存一个 `HttpOnly`、`SameSite=Strict` 的会话 Cookie，默认有效期
+`12h`，点击右上角「退出」立即失效。
+
+未配置 `NEXUSTIER_CONTROLLER_SESSION_KEY` 时，签名密钥在每次启动随机生成，
+Controller 重启会使所有会话失效，需要重新登录。
+
+连续登录失败会按来源 IP 限流：初始额度 8 次，之后每 30 秒恢复 1 次，超出返回
+`429` 并带 `Retry-After`。日志只记录来源地址，不记录提交的用户名和密码。
+
+未携带有效会话时，浏览器导航跳转 `/login`，API 请求返回 `401` 与
+`{"error":{"code":"unauthenticated"}}`。
 
 ## 6. 查询 Controller 持久化拓扑
 

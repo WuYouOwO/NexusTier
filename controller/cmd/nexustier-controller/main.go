@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"errors"
 	"flag"
@@ -46,11 +47,12 @@ func main() {
 // printPasswordHash turns a password on stdin into a storable hash. Reading
 // from stdin keeps the plaintext out of the process list and shell history.
 func printPasswordHash(in io.Reader, out io.Writer) error {
-	raw, err := io.ReadAll(io.LimitReader(in, 1024))
-	if err != nil {
+	// One line, so an interactive operator only needs Enter rather than EOF.
+	line, err := bufio.NewReader(io.LimitReader(in, 1024)).ReadString('\n')
+	if err != nil && !errors.Is(err, io.EOF) {
 		return err
 	}
-	password := strings.TrimRight(string(raw), "\r\n")
+	password := strings.TrimRight(line, "\r\n")
 	if password == "" {
 		return errors.New("password must not be empty")
 	}

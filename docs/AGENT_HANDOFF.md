@@ -13,7 +13,7 @@ This document is the engineering handoff for an AI agent or developer continuing
 - Declared Rust MSRV: `1.95`
 - Baseline HEAD for this handoff update: `7126599d59efdbba3a17a131cd6208d8ac6e3d8d`
 - Latest implemented telemetry-controller milestone: `302df2f` (Phase 1B)
-- Current maturity: internal Alpha; Phase 1B is complete and Phase 1C security/production hardening is next
+- Current maturity: internal Alpha; Phase 1B is complete and Phase 1C security/production hardening is in progress
 - First complete gateway milestone: `fbc1a9d`
 - Latest verified container workflow run: `30686441240` for `7126599` (successful)
 
@@ -140,7 +140,9 @@ The Go controller currently provides:
 - Internal `/v1/retention/status` endpoint with recent and process-lifetime cleanup counters.
 - Graceful SIGINT/SIGTERM shutdown that waits for the worker before closing PostgreSQL.
 
-The controller API is unauthenticated and loopback-only by default. It is an internal operational API, not the future public control-plane API.
+The controller console and API now sit behind a single operator session (`internal/auth`): a PBKDF2-HMAC-SHA256 credential, an HMAC-signed `HttpOnly` `SameSite=Strict` cookie, and per-IP login throttling. `/healthz`, `/readyz`, and `/login` stay public. Configuration fails closed: a non-loopback listener without `NEXUSTIER_CONTROLLER_AUTH_PASSWORD_HASH` refuses to start unless `NEXUSTIER_CONTROLLER_AUTH_MODE=disabled` is set explicitly.
+
+This is still single-operator authentication. There is no authorization model, no tenant boundary, and no audit trail, so it remains an internal operational API rather than the future public control-plane API.
 
 Gateway HTTP endpoints:
 
@@ -162,7 +164,14 @@ Controller HTTP endpoints:
 | `GET /v1/telemetry/status` | Polling attempt/success times, collection ID/state, last error, and consecutive failures |
 | `GET /v1/topology` | Persistent normalized current topology, latest collection/errors, filters, and UUID cursor pagination |
 | `GET /v1/retention/status` | Retention configuration, latest cleanup result, counters, and errors |
+| `GET /v1/build` | Version, commit, build time, Go version, and platform of the running binary |
 | `GET /` | Embedded read-only topology console |
+| `GET /login` | Console login form; served without a session |
+| `POST /login` | Verifies the operator credential and sets the session cookie |
+| `POST /logout` | Clears the session cookie |
+
+Every path except `/healthz`, `/readyz`, and the login routes requires a valid
+session cookie when authentication is active. See section 5.1.
 
 ## 6. Source Map
 
@@ -183,7 +192,7 @@ Controller HTTP endpoints:
 ├── controller/
 │   ├── Dockerfile
 │   ├── cmd/nexustier-controller/main.go
-│   ├── internal/{api,config,database,gatewayclient,ingest,poller,readmodel,retention,webui}/
+│   ├── internal/{api,auth,buildinfo,config,database,gatewayclient,ingest,poller,readmodel,retention,webui}/
 │   ├── go.mod
 │   └── go.sum
 ├── crates/
@@ -233,8 +242,10 @@ Controller ownership:
 | `internal/poller` | Sequential polling and status state |
 | `internal/readmodel` | Persistent current-topology query model and stable pagination |
 | `internal/retention` | Batched metric deletion, raw-payload pruning, and cleanup status |
-| `internal/webui` | Embedded HTML/CSS/JS topology console and security headers |
-| `internal/api` | Controller health, topology, retention, status, and UI routing |
+| `internal/webui` | Embedded React topology console bundle and security headers |
+| `internal/api` | Controller health, topology, retention, status, build, and UI routing |
+| `internal/auth` | Operator credential, signed session cookie, login throttling, login page |
+| `internal/buildinfo` | Build identity injected through `-ldflags`, with a module-stamp fallback |
 
 Read `docs/usage-guide.zh-CN.md` first for the current task-oriented user path and
 `docs/deployment-guide.zh-CN.md` for production operations. The detailed source
@@ -399,7 +410,7 @@ Run these after controller changes:
 cd controller
 go test ./...
 go vet ./...
-go test -race ./internal/gatewayclient ./internal/poller ./internal/api ./internal/retention
+go test -race ./internal/gatewayclient ./internal/poller ./internal/api ./internal/retention ./internal/auth
 ```
 
 Database ingestion, read-model, or retention changes require a dedicated empty PostgreSQL database:
@@ -497,7 +508,7 @@ Real deployment with an official EasyTier GUI v2.6.4 client exposed behavior tha
 - `POSTGRES_PASSWORD` only affects first-time `initdb` on an empty data directory. Regenerating `.env` while retaining `postgres-data` leaves the database role on the old password and causes Controller startup failure with `SQLSTATE 28P01`. Preserve the original `.env` or change the role password interactively with `\password`; delete the volume only when all telemetry data may be discarded.
 - The EasyTier config-server URL is `udp://host:22020/token`. A literal `$` before the token, or unintended shell expansion in a double-quoted URL, causes heartbeat admission failure. With an empty Session Pool, Gateway `/readyz` is `503` and Controller records a complete collection with `machine_count=0` and `error_count=0`.
 - The admission token has appeared in troubleshooting chat and must be treated as compromised. Rotate it and recreate the Gateway container; update every client afterward.
-- Do not expose the unauthenticated Controller console or either HTTP API on a public hostname, even temporarily. Use host loopback plus SSH forwarding. Use an isolated test host, separate subdomain, database, `.env`, and admission token for field testing; do not mix test workloads with a production host.
+- Do not expose the Controller console or either HTTP API on a public hostname, even temporarily. The operator session is a single shared credential without tenant isolation or audit, and the Gateway API has no authentication at all. Use host loopback plus SSH forwarding. Use an isolated test host, separate subdomain, database, `.env`, and admission token for field testing; do not mix test workloads with a production host.
 
 ## 14. Known Limitations
 
@@ -507,7 +518,7 @@ These are intentional MVP limits, not hidden bugs:
 - Long-lived client connections cannot migrate between gateway replicas.
 - Redis does not synchronize sessions today.
 - Gateway topology is collected through a single-flight task and reused for the configured short TTL.
-- Gateway and Controller HTTP APIs and the embedded console have no authentication or tenant isolation.
+- The Controller console and API require an operator session, but there is no authorization model, tenant isolation, or audit trail. Gateway HTTP endpoints remain unauthenticated.
 - Metric/raw-payload retention is implemented, but historical metric queries, charts, downsampling, PostgreSQL partitioning, and long-term aggregation are not.
 - The persistent topology API has fixed UUID ordering/cursors and does not support arbitrary sorting, full-text search, or tenant-scoped views.
 - The Compose example is single-host only; there is no multi-controller HA design.
@@ -521,17 +532,19 @@ Avoid presenting README roadmap features as implemented software.
 
 ## 15. Recommended Next Development Slice
 
-Phase 1B is complete. Treat the next slice as **Phase 1C: security and production hardening**. Do not jump directly to IPAM/ACL while the access boundary remains unauthenticated. Recommended acceptance targets:
+Phase 1B is complete. **Phase 1C: security and production hardening** is in progress. Do not jump directly to IPAM/ACL while the remaining targets are open. Acceptance targets and current state:
 
-1. Add Controller authentication, authorization, tenant boundaries, secure sessions/CSRF handling, rate limits, and audit events.
+1. Add Controller authentication, authorization, tenant boundaries, secure sessions/CSRF handling, rate limits, and audit events. **Partially done.** Single-operator authentication, session cookies, and login throttling ship in `internal/auth`; `SameSite=Strict` plus POST-only mutations cover login CSRF. Authorization, tenant boundaries, and audit events are still open.
 2. Replace the shared bootstrap token as the long-term trust model with device enrollment, revocable credentials, and Machine ID binding.
 3. Establish an isolated field-test environment and a compatibility matrix for official GUI and CLI clients across supported operating systems.
 4. Automate repeated Compose deployment, credential rotation, backup/restore, upgrade/rollback, reconnect, and long-running stability checks.
-5. Add build/protocol version reporting so an operator can prove which Gateway and Controller images are running.
+5. Add build/protocol version reporting so an operator can prove which Gateway and Controller images are running. **Partially done.** The Controller serves `GET /v1/build` (version, commit, build time, Go version, platform) from `internal/buildinfo`, stamped through Docker build args in the publish workflow, and the console header shows the short commit. The Gateway has no equivalent endpoint yet.
 6. Define a historical metric query contract, retention tiers, downsampling, and PostgreSQL partitioning as the following Phase 1D before exposing charts.
 7. Decide whether Redis/WebSocket publication is needed only after durable reads, access control, and multi-controller ownership are stable.
 
-Completion of Phase 1C is the threshold for a controlled Beta. Until then, keep the system classified as an internal Alpha and do not expose the current unauthenticated API/console to the internet.
+Completion of Phase 1C is the threshold for a controlled Beta. Until then, keep the system classified as an internal Alpha and do not expose the API/console to the internet: the operator session is a single shared credential with no tenant isolation or audit trail, and the Gateway API remains unauthenticated.
+
+The open targets are 2 (device enrollment), 3 (field-test matrix), 4 (deployment automation), and the remainders of 1 and 5. Target 4 is the natural next slice: it needs no new protocol surface and makes every later change verifiable.
 
 ## 16. Rules for Future Changes
 

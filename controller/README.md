@@ -55,6 +55,32 @@ sha256:2733ff26be68abd41760f85c6743f486574971efcb8d4e8adfec15a64dfdb789
 | `NEXUSTIER_CONTROLLER_METRIC_RETENTION` | `720h` | 指标样本和 collection 原始 payload 保留时间 |
 | `NEXUSTIER_CONTROLLER_CLEANUP_INTERVAL` | `6h` | 保留清理周期 |
 | `NEXUSTIER_CONTROLLER_CLEANUP_BATCH_SIZE` | `10000` | 每批删除或裁剪的最大行数 |
+| `NEXUSTIER_CONTROLLER_AUTH_MODE` | `auto` | `auto` / `required` / `disabled`；`auto` 下非回环监听地址强制要求认证 |
+| `NEXUSTIER_CONTROLLER_AUTH_USERNAME` | `admin` | 运维账号名 |
+| `NEXUSTIER_CONTROLLER_AUTH_PASSWORD_HASH` | 见下 | PBKDF2 密码哈希；非回环监听时必填 |
+| `NEXUSTIER_CONTROLLER_SESSION_KEY` | 随机生成 | 会话签名密钥，至少 32 字节；留空则每次重启失效所有会话 |
+| `NEXUSTIER_CONTROLLER_SESSION_TTL` | `12h` | 会话有效期 |
+| `NEXUSTIER_CONTROLLER_SECURE_COOKIE` | `true` | 是否给会话 Cookie 加 `Secure` 标记 |
+
+## 认证
+
+控制台与 `/v1/*` 接口会暴露完整拓扑：主机名、内网 IP、Peer 路由。因此监听地址
+不是回环时，控制器要求配置密码哈希，否则拒绝启动。这是有意的失败关闭行为。
+
+生成哈希（明文经 stdin 传入，不进入 shell 历史与进程列表）：
+
+```bash
+go run ./cmd/nexustier-controller -hash-password <<<'你的密码'
+```
+
+输出形如 `pbkdf2-sha256$600000$<salt>$<key>`，填入
+`NEXUSTIER_CONTROLLER_AUTH_PASSWORD_HASH`。
+
+`/healthz` 与 `/readyz` 保持公开，供编排层探活；其余路径都需要会话。API 客户端
+未认证时得到 `401` 与 `unauthenticated` 错误码，浏览器导航则重定向到 `/login`。
+
+若认证已由上游反向代理终结，用 `NEXUSTIER_CONTROLLER_AUTH_MODE=disabled` 显式
+退出。控制器启动时会记录一条告警说明控制台无保护。
 
 ## 运行
 
@@ -97,8 +123,9 @@ go -C controller run ./cmd/nexustier-controller
 - `cursor=<uuid>`：从该 Machine UUID 之后继续读取。
 - `limit=1..500`：每页 Machine 数，默认 `100`。
 
-API 当前没有认证。原生运行默认绑定回环地址；容器内为了私有网络访问监听所有接口，
-Compose 仅映射到宿主机 `127.0.0.1:8080`。不得直接暴露到互联网。
+API 和控制台需要运维会话（见上文认证配置）。这是单账号认证，没有授权模型、租户
+隔离或审计日志，仍属内部运维接口。原生运行默认绑定回环地址；容器内为了私有网络
+访问监听所有接口，Compose 仅映射到宿主机 `127.0.0.1:8080`。不得直接暴露到互联网。
 
 ## 数据模型
 

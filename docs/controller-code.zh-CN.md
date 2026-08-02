@@ -155,9 +155,12 @@ Controller `/v1/topology` 是独立读模型，不透传 Gateway topology v1。�
 `X-Content-Type-Options: nosniff`、`X-Frame-Options: DENY` 和 `Referrer-Policy`。
 静态处理器只接受三个明确资源路径，不做 SPA fallback。
 
-API 和控制台当前无认证并默认绑定 `127.0.0.1:8080`。容器内监听所有接口以供私有
-网络访问，Compose 只映射宿主机回环地址。公开部署前必须设计认证、授权、租户边界、
-CSRF/会话策略和速率限制，不能直接把当前接口暴露到互联网。
+API 和控制台由 `internal/auth` 的运维会话保护：PBKDF2-HMAC-SHA256 凭据、HMAC 签名
+的 `HttpOnly` `SameSite=Strict` cookie、按来源 IP 的登录限流。`/healthz`、`/readyz`
+和 `/login` 保持公开。非回环监听地址若未配置密码哈希则拒绝启动。
+
+这是单账号认证。公开部署前仍需授权模型、租户边界和审计事件，不能直接把当前接口
+暴露到互联网。
 
 ## 11. 验证覆盖
 
@@ -184,7 +187,7 @@ PostgreSQL 集成、Gateway/Controller 镜像发布与 Cosign 签名。
 
 ## 12. 当前限制与下一步
 
-- 控制台和 API 没有认证、租户隔离或公网安全边界。
+- 控制台和 API 要求运维会话，但仍是单账号，没有授权模型、租户隔离或审计日志。
 - 没有历史指标查询、图表、降采样、PostgreSQL 分区或长期聚合。
 - 当前拓扑 API 只有 UUID cursor 和固定排序，不支持全文搜索或任意排序。
 - 保留清理是单 Controller 也安全的幂等批处理，但尚无 HA 调度归属和 leader election。
