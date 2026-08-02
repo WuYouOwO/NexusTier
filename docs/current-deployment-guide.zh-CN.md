@@ -515,6 +515,39 @@ docker compose --env-file .env -f compose.example.yaml up -d
 轮询抖动必须大于等于 0 且小于轮询间隔。排障时可以临时提高 `RUST_LOG`，完成后恢复
 `info`，避免长期产生大量底层日志。
 
+### 12.4 使用运维脚本
+
+仓库提供 `scripts/nexustier-ops.sh`，把本文的重复操作封装成幂等命令。它在部署目录
+执行，自动探测 `docker compose` 或 `docker-compose`：
+
+```bash
+./scripts/nexustier-ops.sh --help
+```
+
+| 命令 | 用途 |
+| --- | --- |
+| `preflight` | 校验 `.env`、必需变量与 compose 定义，不改变任何状态 |
+| `deploy` | `preflight` + `pull` + `up -d` + `verify` |
+| `verify` | 检查三个健康端点，并确认 `/v1/*` 未认证时返回 `401` |
+| `login-verify` | 用运维口令登录并读取一次 `/v1/topology`，验证会话链路 |
+| `backup` | 暂停 Controller 后创建 `pg_dump` 备份并校验非空 |
+| `restore-verify <dump>` | 恢复到临时库、核对 migration 后删除临时库 |
+| `rotate-token` | 轮换 Gateway 准入 Token 并重建 gateway |
+| `rotate-console-password` | 重新生成控制台口令哈希并重建 controller |
+| `upgrade <gateway 镜像> <controller 镜像>` | 固定新镜像、重建并验证 |
+| `rollback <gateway 镜像> <controller 镜像>` | 恢复到指定镜像并验证 |
+
+脚本的安全约束：所有破坏性步骤前交互确认；不包含 `down --volumes`，因此不会删除
+PostgreSQL 数据卷；删除临时恢复库前校验库名前缀，无法误删业务库；口令与 Token 以
+静默方式读取，只写入 `.env` 并保持原权限，不打印到终端或日志。
+
+`upgrade` 会先要求确认已备份数据库并审核过 migration。当前迁移系统没有自动 down
+migration，`rollback` 只切换镜像，不回滚 schema；回滚前必须确认旧 Controller 兼容
+当前数据库结构。
+
+自动化环境可用 `NEXUSTIER_OPS_ASSUME_YES=1` 跳过确认。这会移除误操作保护，只应在
+已经明确评估过影响的流水线中使用。
+
 ## 13. 备份与恢复
 
 至少备份：

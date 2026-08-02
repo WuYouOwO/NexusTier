@@ -207,6 +207,9 @@ session cookie when authentication is active. See section 5.1.
 │           ├── session_pool.rs
 │           ├── telemetry.rs
 │           └── api.rs
+├── scripts/
+│   ├── nexustier-ops.sh
+│   └── test-nexustier-ops.sh
 └── docs/
     ├── AGENT_HANDOFF.md
     ├── README.md
@@ -422,6 +425,15 @@ NEXUSTIER_TEST_DATABASE_URL='<test database URL>' \
 
 The integration test truncates telemetry tables. Never point it at production or valuable data. PostgreSQL 18.4 was used for the local verified baseline. Verified cases include migration repeatability, duplicate collections, collection ID payload conflicts, stale snapshot deletion prevention, partial peer failure preservation, and inactive entity convergence.
 
+Run these after changing the operations scripts:
+
+```bash
+shellcheck scripts/nexustier-ops.sh scripts/test-nexustier-ops.sh
+./scripts/test-nexustier-ops.sh
+```
+
+The harness puts stub `docker`, `docker-compose`, `curl`, `openssl`, and PostgreSQL client commands on `PATH`, so it verifies guards, argument construction, and `.env` rewriting without a Docker daemon. Current expected count: 14 cases. It does not prove the scripts work against a real stack; that check still needs a Docker-capable host.
+
 A real controller process smoke test with a fixture Gateway and isolated PostgreSQL verified migration 002, polling, health/readiness, telemetry status, persistent topology, retention status, embedded UI security headers, normalized writes, and clean SIGTERM exit. Browser validation covered non-empty SVG nodes/edges, click selection, hidden pagination controls, and no horizontal overflow on desktop/mobile viewports.
 
 The release build and real process smoke test were also verified. Smoke-test expectations with no clients:
@@ -537,14 +549,14 @@ Phase 1B is complete. **Phase 1C: security and production hardening** is in prog
 1. Add Controller authentication, authorization, tenant boundaries, secure sessions/CSRF handling, rate limits, and audit events. **Partially done.** Single-operator authentication, session cookies, and login throttling ship in `internal/auth`; `SameSite=Strict` plus POST-only mutations cover login CSRF. Authorization, tenant boundaries, and audit events are still open.
 2. Replace the shared bootstrap token as the long-term trust model with device enrollment, revocable credentials, and Machine ID binding.
 3. Establish an isolated field-test environment and a compatibility matrix for official GUI and CLI clients across supported operating systems.
-4. Automate repeated Compose deployment, credential rotation, backup/restore, upgrade/rollback, reconnect, and long-running stability checks.
+4. Automate repeated Compose deployment, credential rotation, backup/restore, upgrade/rollback, reconnect, and long-running stability checks. **Partially done.** `scripts/nexustier-ops.sh` wraps preflight, deploy, verify, login-verify, backup, restore-verify, admission-token rotation, console-password rotation, upgrade, and rollback. `scripts/test-nexustier-ops.sh` covers the guards with stub `docker`/`curl` binaries on `PATH`, and ShellCheck is clean. The scripts have **not** been executed against a real Docker daemon; the development VM has no Docker CLI. Reconnect and long-running stability checks are still open.
 5. Add build/protocol version reporting so an operator can prove which Gateway and Controller images are running. **Partially done.** The Controller serves `GET /v1/build` (version, commit, build time, Go version, platform) from `internal/buildinfo`, stamped through Docker build args in the publish workflow, and the console header shows the short commit. The Gateway has no equivalent endpoint yet.
 6. Define a historical metric query contract, retention tiers, downsampling, and PostgreSQL partitioning as the following Phase 1D before exposing charts.
 7. Decide whether Redis/WebSocket publication is needed only after durable reads, access control, and multi-controller ownership are stable.
 
 Completion of Phase 1C is the threshold for a controlled Beta. Until then, keep the system classified as an internal Alpha and do not expose the API/console to the internet: the operator session is a single shared credential with no tenant isolation or audit trail, and the Gateway API remains unauthenticated.
 
-The open targets are 2 (device enrollment), 3 (field-test matrix), 4 (deployment automation), and the remainders of 1 and 5. Target 4 is the natural next slice: it needs no new protocol surface and makes every later change verifiable.
+The open targets are 2 (device enrollment), 3 (field-test matrix), and the remainders of 1, 4, and 5. The next useful step is to run `scripts/nexustier-ops.sh` end to end on a Docker-capable host: that validates the automation, the fail-closed auth upgrade path, and the backup/restore cycle in one pass, without adding new protocol surface.
 
 ## 16. Rules for Future Changes
 
