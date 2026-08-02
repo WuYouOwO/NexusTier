@@ -193,6 +193,13 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Resolve build stamp
+        id: stamp
+        shell: bash
+        run: |
+          echo "time=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "${GITHUB_OUTPUT}"
+          echo "version=${GITHUB_REF_NAME}" >> "${GITHUB_OUTPUT}"
+
       - name: Generate image metadata
         id: meta
         uses: docker/metadata-action@96383f45573cb7f253c731d3b3ab81c87ef81934 # v5.0.0
@@ -221,6 +228,10 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            COMMIT_SHA=${{ github.sha }}
+            BUILD_TIME=${{ steps.stamp.outputs.time }}
+            BUILD_VERSION=${{ steps.stamp.outputs.version }}
           cache-from: type=gha,scope=nexustier-${{ matrix.component }}
           cache-to: type=gha,mode=max,scope=nexustier-${{ matrix.component }}
 

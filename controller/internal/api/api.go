@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/WuYouOwO/NexusTier/controller/internal/buildinfo"
 	"github.com/WuYouOwO/NexusTier/controller/internal/poller"
 	"github.com/WuYouOwO/NexusTier/controller/internal/readmodel"
 	"github.com/WuYouOwO/NexusTier/controller/internal/retention"
@@ -42,6 +43,7 @@ func New(database Database, topologyReader TopologyReader, worker *poller.Worker
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", server.health)
 	mux.HandleFunc("GET /readyz", server.ready)
+	mux.HandleFunc("GET /v1/build", server.buildIdentity)
 	mux.HandleFunc("GET /v1/telemetry/status", server.telemetryStatus)
 	mux.HandleFunc("GET /v1/topology", server.currentTopology)
 	mux.HandleFunc("GET /v1/retention/status", server.retentionStatus)
@@ -69,6 +71,10 @@ func (server *Server) ready(writer http.ResponseWriter, request *http.Request) {
 		return
 	}
 	writeJSON(writer, http.StatusOK, map[string]string{"status": "ready"})
+}
+
+func (server *Server) buildIdentity(writer http.ResponseWriter, _ *http.Request) {
+	writeJSON(writer, http.StatusOK, buildinfo.Current())
 }
 
 func (server *Server) telemetryStatus(writer http.ResponseWriter, _ *http.Request) {

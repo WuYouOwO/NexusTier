@@ -1,3 +1,4 @@
+import { useBuildInfo } from '../hooks/useBuildInfo.js'
 import styles from './Header.module.css'
 
 const STATUS = {
@@ -8,6 +9,8 @@ const STATUS = {
 
 export default function Header({ status, updatedAt }) {
   const s = STATUS[status] || STATUS.connecting
+  const build = useBuildInfo()
+  const shortCommit = build?.commit && build.commit !== 'unknown' ? build.commit.slice(0, 7) : null
   return (
     <header className={styles.header}>
       <div className={styles.left}>
@@ -22,6 +25,11 @@ export default function Header({ status, updatedAt }) {
         </nav>
       </div>
       <div className={styles.right}>
+        {shortCommit && (
+          <span className={styles.build} title={`版本 ${build.version} · 构建于 ${build.built_at}`}>
+            {shortCommit}
+          </span>
+        )}
         {updatedAt && (
           <span className={styles.time}>
             最后更新：{new Intl.DateTimeFormat('zh-CN', { timeStyle: 'medium' }).format(updatedAt)}

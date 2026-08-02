@@ -8,6 +8,10 @@ RUN npm run build
 
 FROM golang:1.25-bookworm AS builder
 
+ARG COMMIT_SHA=""
+ARG BUILD_TIME=""
+ARG BUILD_VERSION="dev"
+
 WORKDIR /src
 COPY controller/go.mod controller/go.sum ./
 RUN go mod download
@@ -16,7 +20,10 @@ COPY controller/ .
 COPY --from=ui-builder /assets-new/ ./internal/webui/assets/
 RUN CGO_ENABLED=0 GOOS=linux go build \
     -trimpath \
-    -ldflags="-s -w" \
+    -ldflags="-s -w \
+      -X github.com/WuYouOwO/NexusTier/controller/internal/buildinfo.commit=${COMMIT_SHA} \
+      -X github.com/WuYouOwO/NexusTier/controller/internal/buildinfo.buildTime=${BUILD_TIME} \
+      -X github.com/WuYouOwO/NexusTier/controller/internal/buildinfo.version=${BUILD_VERSION}" \
     -o /out/nexustier-controller \
     ./cmd/nexustier-controller
 

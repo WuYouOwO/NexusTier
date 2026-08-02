@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"log/slog"
@@ -117,5 +118,43 @@ func TestCurrentTopologyHidesDatabaseErrors(t *testing.T) {
 	}
 	if strings.Contains(response.Body.String(), "postgres details") {
 		t.Fatal("response leaked internal database error")
+	}
+}
+
+func TestBuildIdentityReportsRunningBinary(t *testing.T) {
+	request := httptest.NewRequest(http.MethodGet, "/v1/build", nil)
+	response := httptest.NewRecorder()
+
+	testHandler(fakeDatabase{}).ServeHTTP(response, request)
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", response.Code)
+	}
+	var payload struct {
+		Version   string `json:"version"`
+		Commit    string `json:"commit"`
+		BuiltAt   string `json:"built_at"`
+		GoVersion string `json:"go_version"`
+		Platform  string `json:"platform"`
+	}
+	if err := json.NewDecoder(response.Body).Decode(&payload); err != nil {
+		t.Fatalf("decode build identity: %v", err)
+	}
+	if payload.Version == "" || payload.Commit == "" || payload.BuiltAt == "" {
+		t.Fatalf("build identity has empty fields: %+v", payload)
+	}
+	if payload.GoVersion == "" || payload.Platform == "" {
+		t.Fatalf("build identity omits runtime details: %+v", payload)
+	}
+}
+
+func TestBuildIdentityDoesNotRequireDatabase(t *testing.T) {
+	request := httptest.NewRequest(http.MethodGet, "/v1/build", nil)
+	response := httptest.NewRecorder()
+
+	testHandler(fakeDatabase{err: errors.New("down")}).ServeHTTP(response, request)
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", response.Code)
 	}
 }
