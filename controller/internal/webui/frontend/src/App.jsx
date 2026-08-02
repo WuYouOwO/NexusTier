@@ -7,24 +7,29 @@ import TopologyGraph from './components/TopologyGraph.jsx'
 import DetailsPanel from './components/DetailsPanel.jsx'
 import MachineTable from './components/MachineTable.jsx'
 import styles from './App.module.css'
-import { relativeTime } from './utils.js'
+import { relativeTime, resolveSelection } from './utils.js'
 
 export default function App() {
   const {
-    data, status, loading,
+    data, status, loading, updatedAt,
     interval, setIntervalMs,
     activeFilter, setActiveFilter,
     refresh, loadMore,
   } = useTopology()
 
-  const [selected, setSelected] = useState(null)
+  const [selectedKey, setSelectedKey] = useState(null)
   const [search, setSearch] = useState('')
-  const updatedAt = useMemo(() => new Date(), [])
 
   const machines = data?.machines ?? []
   const latestCollection = data?.latestCollection ?? null
   const latestErrors = data?.latestErrors ?? []
   const hasMore = data?.hasMore ?? false
+
+  // 每轮刷新按 key 重新解析，避免详情面板停留在旧快照上
+  const selected = useMemo(
+    () => resolveSelection(selectedKey, machines),
+    [selectedKey, machines],
+  )
 
   const filtered = useMemo(() => {
     if (!search.trim()) return machines
@@ -68,7 +73,7 @@ export default function App() {
         {/* 工具栏 */}
         <Toolbar
           search={search} onSearchChange={setSearch}
-          activeFilter={activeFilter} onFilterChange={v => { setActiveFilter(v); setSelected(null) }}
+          activeFilter={activeFilter} onFilterChange={v => { setActiveFilter(v); setSelectedKey(null) }}
           interval={interval} onIntervalChange={setIntervalMs}
           onRefresh={refresh} loading={loading}
         />
@@ -88,7 +93,7 @@ export default function App() {
                 <span><i className={styles.lineR} />中继</span>
               </div>
             </div>
-            <TopologyGraph machines={filtered} selected={selected} onSelect={setSelected} />
+            <TopologyGraph machines={filtered} selectedKey={selectedKey} onSelect={setSelectedKey} />
           </div>
           <DetailsPanel
             selected={selected}
@@ -100,7 +105,8 @@ export default function App() {
         {/* 节点清单 */}
         <MachineTable
           machines={filtered}
-          onSelect={setSelected}
+          selectedKey={selectedKey}
+          onSelect={setSelectedKey}
           hasMore={hasMore}
           onLoadMore={loadMore}
         />

@@ -47,3 +47,27 @@ export function latencyColor(ms) {
   if (t < 0.5) return `hsl(${Math.round(120 - t * 2 * 60)}, 70%, 40%)`
   return `hsl(${Math.round(60 - (t - 0.5) * 2 * 60)}, 80%, 40%)`
 }
+
+// 选中项只保存 key，每次轮询后重新解析，避免详情面板显示过期快照
+export function resolveSelection(key, machines) {
+  if (!key) return null
+  const parts = String(key).split(':')
+
+  if (parts[0] === 'm') {
+    const machine = machines.find(m => m.machine_id === parts[1])
+    return machine ? { key, type: 'machine', data: machine } : null
+  }
+
+  if (parts[0] === 'p') {
+    const [, instanceId, peerId] = parts
+    for (const machine of machines) {
+      for (const instance of machine.network_instances || []) {
+        if (instance.instance_id !== instanceId) continue
+        const peer = (instance.peers || []).find(p => String(p.peer_id) === peerId)
+        if (peer) return { key, type: 'peer', data: peer, instance, machine }
+      }
+    }
+  }
+
+  return null
+}

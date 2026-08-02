@@ -1,7 +1,7 @@
 import { relativeTime, shortID } from '../utils.js'
 import styles from './MachineTable.module.css'
 
-export default function MachineTable({ machines, onSelect, hasMore, onLoadMore }) {
+export default function MachineTable({ machines, selectedKey, onSelect, hasMore, onLoadMore }) {
   return (
     <section className={styles.section}>
       <div className={styles.heading}>
@@ -27,8 +27,13 @@ export default function MachineTable({ machines, onSelect, hasMore, onLoadMore }
             {machines.map((m) => {
               const instances = m.network_instances || []
               const peers = instances.reduce((s, i) => s + (i.peers || []).length, 0)
+              const key = `m:${m.machine_id}`
               return (
-                <tr key={m.machine_id} onClick={() => onSelect?.({ key: `m:${m.machine_id}`, type: 'machine', data: m, label: m.hostname })}>
+                <tr
+                  key={m.machine_id}
+                  className={selectedKey === key ? styles.selected : undefined}
+                  onClick={() => onSelect?.(key)}
+                >
                   <td>
                     <div className={styles.machineName}>
                       <strong>{m.hostname || '未命名'}</strong>

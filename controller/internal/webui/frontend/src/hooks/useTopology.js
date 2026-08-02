@@ -7,6 +7,7 @@ export function useTopology() {
   const [status, setStatus] = useState('connecting') // connecting | online | offline
   const [error, setError] = useState(null)
   const [loading, setLoading] = useState(false)
+  const [updatedAt, setUpdatedAt] = useState(null)
   const [interval, setIntervalMs] = useState(DEFAULT_INTERVAL)
   const [activeFilter, setActiveFilter] = useState('true')
   const cursorRef = useRef(null)
@@ -37,6 +38,7 @@ export function useTopology() {
         hasMore: !!json.page?.next_cursor,
       })
       setStatus('online')
+      setUpdatedAt(new Date())
       setError(null)
     } catch (err) {
       setStatus('offline')
@@ -64,7 +66,7 @@ export function useTopology() {
   }, [activeFilter])
 
   return {
-    data, status, error, loading,
+    data, status, error, loading, updatedAt,
     interval, setIntervalMs,
     activeFilter, setActiveFilter,
     refresh, loadMore,

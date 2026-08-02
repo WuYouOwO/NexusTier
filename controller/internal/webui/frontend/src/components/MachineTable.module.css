@@ -55,6 +55,9 @@
 .table tbody tr:hover { background: var(--primary-light); }
 .table tbody tr:last-child td { border-bottom: 0; }
 
+.selected { background: var(--primary-light); }
+.selected td:first-child { box-shadow: inset 2px 0 0 var(--primary); }
+
 .machineName { display: flex; flex-direction: column; gap: 2px; }
 .machineName strong { font-weight: 600; }
 .machineName small  { font-size: 11px; color: var(--text-3); font-family: monospace; }

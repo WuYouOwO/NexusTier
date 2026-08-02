@@ -1,171 +1,459 @@
-import { useEffect, useRef, useCallback } from 'react'
+import { useEffect, useRef } from 'react'
 import { latencyColor, formatLatency, shortID } from '../utils.js'
 import styles from './TopologyGraph.module.css'
 
-// --- 力模拟（无外部库）---
-function createSimulation(nodes, edges) {
-  const REPEL = 3600, SPRING_LEN = 140, SPRING_K = 0.04, DAMP = 0.82, CENTER_K = 0.007
-  nodes.forEach(n => { if (n.vx == null) { n.vx = (Math.random()-.5)*2; n.vy = (Math.random()-.5)*2 } })
-  return function tick(cx, cy) {
-    for (let i = 0; i < nodes.length; i++) {
-      let fx = 0, fy = 0; const a = nodes[i]
-      for (let j = 0; j < nodes.length; j++) {
-        if (i === j) continue
-        const b = nodes[j]; const dx = a.x - b.x, dy = a.y - b.y
-        const dist = Math.sqrt(dx*dx + dy*dy) || 1; const f = REPEL/(dist*dist)
-        fx += (dx/dist)*f; fy += (dy/dist)*f
-      }
-      for (const e of edges) {
-        let other = null
-        if (e.source === a.key) other = nodes.find(n => n.key === e.target)
-        else if (e.target === a.key) other = nodes.find(n => n.key === e.source)
-        if (!other) continue
-        const dx = other.x - a.x, dy = other.y - a.y, dist = Math.sqrt(dx*dx+dy*dy)||1
-        const stretch = dist - SPRING_LEN
-        fx += (dx/dist)*stretch*SPRING_K; fy += (dy/dist)*stretch*SPRING_K
-      }
-      fx += (cx - a.x)*CENTER_K; fy += (cy - a.y)*CENTER_K
-      a.vx = (a.vx + fx)*DAMP; a.vy = (a.vy + fy)*DAMP
-      a.x += a.vx; a.y += a.vy
+const REPEL = 3600
+const SPRING_LEN = 140
+const SPRING_K = 0.04
+const DAMP = 0.82
+const CENTER_K = 0.007
+const ALPHA_DECAY = 0.02
+const ALPHA_MIN = 0.005
+const SETTLE_EPSILON = 0.08
+
+// 力导向布局。alpha 随时间衰减，使布局收敛后停止重绘。
+function createSimulation() {
+  let nodes = []
+  let adjacency = new Map()
+  let alpha = 1
+
+  function setGraph(nextNodes, nextEdges) {
+    nodes = nextNodes
+    adjacency = new Map(nodes.map((n) => [n.key, []]))
+    for (const edge of nextEdges) {
+      adjacency.get(edge.source)?.push(edge.target)
+      adjacency.get(edge.target)?.push(edge.source)
     }
+  }
+
+  // 返回本帧的最大位移，供调用方判断是否已收敛。
+  function tick(cx, cy) {
+    if (alpha < ALPHA_MIN) return 0
+    const byKey = new Map(nodes.map((n) => [n.key, n]))
+    let maxShift = 0
+
+    for (const a of nodes) {
+      if (a.fixed) continue
+      let fx = 0
+      let fy = 0
+
+      for (const b of nodes) {
+        if (a === b) continue
+        const dx = a.x - b.x
+        const dy = a.y - b.y
+        const dist = Math.sqrt(dx * dx + dy * dy) || 1
+        const force = REPEL / (dist * dist)
+        fx += (dx / dist) * force
+        fy += (dy / dist) * force
+      }
+
+      for (const neighborKey of adjacency.get(a.key) || []) {
+        const other = byKey.get(neighborKey)
+        if (!other) continue
+        const dx = other.x - a.x
+        const dy = other.y - a.y
+        const dist = Math.sqrt(dx * dx + dy * dy) || 1
+        const stretch = dist - SPRING_LEN
+        fx += (dx / dist) * stretch * SPRING_K
+        fy += (dy / dist) * stretch * SPRING_K
+      }
+
+      fx += (cx - a.x) * CENTER_K
+      fy += (cy - a.y) * CENTER_K
+
+      a.vx = (a.vx + fx * alpha) * DAMP
+      a.vy = (a.vy + fy * alpha) * DAMP
+      a.x += a.vx
+      a.y += a.vy
+      maxShift = Math.max(maxShift, Math.abs(a.vx), Math.abs(a.vy))
+    }
+
+    alpha *= 1 - ALPHA_DECAY
+    return maxShift
+  }
+
+  return {
+    setGraph,
+    tick,
+    reheat() {
+      alpha = 1
+    },
   }
 }
 
 function buildGraph(machines) {
-  const nodes = [], edges = [], peerSeen = new Set()
-  for (const m of machines) {
-    const mk = `m:${m.machine_id}`
-    if (!nodes.find(n => n.key === mk)) nodes.push({ key: mk, type: 'machine', active: m.active, label: m.hostname || shortID(m.machine_id), sub: shortID(m.machine_id), data: m, x: Math.random()*600+100, y: Math.random()*400+100, vx: 0, vy: 0 })
-    for (const inst of (m.network_instances || [])) {
-      for (const peer of (inst.peers || [])) {
-        const pk = `p:${inst.instance_id}:${peer.peer_id}`
-        if (!peerSeen.has(pk)) {
-          peerSeen.add(pk)
-          nodes.push({ key: pk, type: 'peer', label: peer.hostname || `Peer ${peer.peer_id}`, sub: peer.ipv4 || `#${peer.peer_id}`, data: peer, instance: inst, latency: peer.latency_ms, x: Math.random()*600+100, y: Math.random()*400+100, vx: 0, vy: 0 })
-          edges.push({ source: mk, target: pk, direct: peer.direct, latency: peer.latency_ms, key: `e:${pk}` })
-        }
+  const nodes = []
+  const edges = []
+  const seen = new Set()
+
+  for (const machine of machines) {
+    const machineKey = `m:${machine.machine_id}`
+    if (!seen.has(machineKey)) {
+      seen.add(machineKey)
+      nodes.push({
+        key: machineKey,
+        type: 'machine',
+        active: machine.active,
+        label: machine.hostname || shortID(machine.machine_id),
+        sub: shortID(machine.machine_id),
+        x: Math.random() * 600 + 100,
+        y: Math.random() * 400 + 100,
+        vx: 0,
+        vy: 0,
+      })
+    }
+
+    for (const instance of machine.network_instances || []) {
+      for (const peer of instance.peers || []) {
+        const peerKey = `p:${instance.instance_id}:${peer.peer_id}`
+        if (seen.has(peerKey)) continue
+        seen.add(peerKey)
+        nodes.push({
+          key: peerKey,
+          type: 'peer',
+          label: peer.hostname || `Peer ${peer.peer_id}`,
+          sub: peer.ipv4 || `#${peer.peer_id}`,
+          latency: peer.latency_ms,
+          x: Math.random() * 600 + 100,
+          y: Math.random() * 400 + 100,
+          vx: 0,
+          vy: 0,
+        })
+        edges.push({
+          key: `e:${peerKey}`,
+          source: machineKey,
+          target: peerKey,
+          direct: peer.direct,
+          latency: peer.latency_ms,
+        })
       }
     }
   }
+
   return { nodes, edges }
 }
 
 function svgEl(name, attrs) {
   const el = document.createElementNS('http://www.w3.org/2000/svg', name)
-  Object.entries(attrs).forEach(([k, v]) => el.setAttribute(k, v))
+  for (const [key, value] of Object.entries(attrs)) el.setAttribute(key, value)
   return el
 }
 
-export default function TopologyGraph({ machines, selected, onSelect }) {
+export default function TopologyGraph({ machines, selectedKey, onSelect }) {
   const svgRef = useRef(null)
-  const stateRef = useRef({ nodes: [], edges: [], tick: null, dragging: null, zoom: 1, panX: 0, panY: 0, animId: null })
-  const selectedKeyRef = useRef(null)
-  selectedKeyRef.current = selected?.key ?? null
+  const onSelectRef = useRef(onSelect)
+  const stateRef = useRef({
+    nodes: [],
+    edges: [],
+    simulation: createSimulation(),
+    dragging: null,
+    zoom: 1,
+    panX: 0,
+    panY: 0,
+    selectedKey: null,
+    dirty: true,
+    animId: null,
+  })
 
-  const rebuildGraph = useCallback((mList) => {
-    const { nodes: newNodes, edges } = buildGraph(mList)
-    const s = stateRef.current
-    for (const n of newNodes) {
-      const prev = s.nodes.find(p => p.key === n.key)
-      if (prev) { n.x = prev.x; n.y = prev.y; n.vx = prev.vx; n.vy = prev.vy }
-    }
-    s.nodes = newNodes; s.edges = edges
-    const svg = svgRef.current
-    if (svg) { const cx = (svg.clientWidth||800)/2; const cy = (svg.clientHeight||500)/2; s.tick = createSimulation(s.nodes, s.edges).bind(null, cx, cy) }
-  }, [])
-
-  useEffect(() => { rebuildGraph(machines) }, [machines, rebuildGraph])
+  onSelectRef.current = onSelect
 
   useEffect(() => {
-    const svg = svgRef.current; if (!svg) return
-    const s = stateRef.current; let stopped = false
+    const state = stateRef.current
+    state.selectedKey = selectedKey ?? null
+    state.dirty = true
+  }, [selectedKey])
 
-    function draw() {
-      if (stopped) return
-      if (s.nodes.length === 0) { s.animId = requestAnimationFrame(draw); return }
-      if (s.tick) { const cx = (svg.clientWidth||800)/2; const cy = (svg.clientHeight||500)/2; s.tick = createSimulation(s.nodes, s.edges).bind(null, cx, cy); for (let i=0;i<3;i++) s.tick(cx, cy) }
+  useEffect(() => {
+    const state = stateRef.current
+    const { nodes, edges } = buildGraph(machines)
+    // 保留既有节点坐标，避免刷新后布局跳变。
+    const previous = new Map(state.nodes.map((n) => [n.key, n]))
+    for (const node of nodes) {
+      const prev = previous.get(node.key)
+      if (prev) {
+        node.x = prev.x
+        node.y = prev.y
+        node.vx = prev.vx
+        node.vy = prev.vy
+      }
+    }
+    state.nodes = nodes
+    state.edges = edges
+    state.simulation.setGraph(nodes, edges)
+    // 指标刷新不应重排布局，只有拓扑成员变化才重新收敛
+    const topologyChanged =
+      nodes.length !== previous.size || nodes.some((node) => !previous.has(node.key))
+    if (topologyChanged) state.simulation.reheat()
+    state.dirty = true
+  }, [machines])
 
-      const W = svg.clientWidth||800, H = svg.clientHeight||500
-      svg.setAttribute('viewBox', `0 0 ${W} ${H}`)
-      svg.innerHTML = ''
+  useEffect(() => {
+    const svg = svgRef.current
+    if (!svg) return
+    const state = stateRef.current
+    let stopped = false
+
+    function render() {
+      const width = svg.clientWidth || 800
+      const height = svg.clientHeight || 500
+      svg.setAttribute('viewBox', `0 0 ${width} ${height}`)
 
       const defs = svgEl('defs', {})
-      for (const [id, color] of [['arr-d', '#1677ff'], ['arr-r', '#faad14']]) {
-        const mk = svgEl('marker', { id, markerWidth: '7', markerHeight: '7', refX: '6', refY: '3.5', orient: 'auto' })
-        const poly = svgEl('polygon', { points: '0 0, 7 3.5, 0 7', fill: color, opacity: '0.7' })
-        mk.appendChild(poly); defs.appendChild(mk)
+      for (const [id, color] of [
+        ['arr-d', '#1677ff'],
+        ['arr-r', '#faad14'],
+      ]) {
+        const marker = svgEl('marker', {
+          id,
+          markerWidth: '7',
+          markerHeight: '7',
+          refX: '6',
+          refY: '3.5',
+          orient: 'auto',
+        })
+        marker.appendChild(svgEl('polygon', { points: '0 0, 7 3.5, 0 7', fill: color, opacity: '0.7' }))
+        defs.appendChild(marker)
       }
-      svg.appendChild(defs)
 
-      const g = svgEl('g', { transform: `translate(${s.panX},${s.panY}) scale(${s.zoom})` })
-      svg.appendChild(g)
-      const byKey = new Map(s.nodes.map(n => [n.key, n]))
+      const scene = svgEl('g', { transform: `translate(${state.panX},${state.panY}) scale(${state.zoom})` })
+      const byKey = new Map(state.nodes.map((n) => [n.key, n]))
 
-      // 边
-      for (const e of s.edges) {
-        const src = byKey.get(e.source), tgt = byKey.get(e.target); if (!src||!tgt) continue
-        const color = e.direct ? (e.latency != null ? latencyColor(e.latency) : '#1677ff') : '#faad14'
-        const line = svgEl('line', { x1: src.x, y1: src.y, x2: tgt.x, y2: tgt.y, stroke: color, 'stroke-width': e.direct ? '1.8' : '1.5', 'stroke-opacity': '0.55' })
-        if (!e.direct) line.setAttribute('stroke-dasharray', '6 4')
-        line.setAttribute('marker-end', `url(#${e.direct ? 'arr-d' : 'arr-r'})`)
-        g.appendChild(line)
-        if (e.latency != null) {
-          const mx = (src.x+tgt.x)/2, my = (src.y+tgt.y)/2
-          const bg = svgEl('rect', { x: mx-22, y: my-9, width: '44', height: '14', rx: '3', fill: 'white', 'fill-opacity': '0.9' })
-          const lbl = svgEl('text', { x: mx, y: my+1, 'text-anchor': 'middle', 'font-size': '9', fill: color, 'font-weight': '600', 'pointer-events': 'none' })
-          lbl.textContent = formatLatency(e.latency)
-          g.appendChild(bg); g.appendChild(lbl)
+      for (const edge of state.edges) {
+        const source = byKey.get(edge.source)
+        const target = byKey.get(edge.target)
+        if (!source || !target) continue
+        const color = edge.direct
+          ? edge.latency != null
+            ? latencyColor(edge.latency)
+            : '#1677ff'
+          : '#faad14'
+        const line = svgEl('line', {
+          x1: source.x,
+          y1: source.y,
+          x2: target.x,
+          y2: target.y,
+          stroke: color,
+          'stroke-width': edge.direct ? '1.8' : '1.5',
+          'stroke-opacity': '0.55',
+          'marker-end': `url(#${edge.direct ? 'arr-d' : 'arr-r'})`,
+        })
+        if (!edge.direct) line.setAttribute('stroke-dasharray', '6 4')
+        scene.appendChild(line)
+
+        if (edge.latency != null) {
+          const mx = (source.x + target.x) / 2
+          const my = (source.y + target.y) / 2
+          scene.appendChild(
+            svgEl('rect', {
+              x: mx - 22,
+              y: my - 9,
+              width: '44',
+              height: '14',
+              rx: '3',
+              fill: 'white',
+              'fill-opacity': '0.9',
+            }),
+          )
+          const label = svgEl('text', {
+            x: mx,
+            y: my + 1,
+            'text-anchor': 'middle',
+            'font-size': '9',
+            fill: color,
+            'font-weight': '600',
+            'pointer-events': 'none',
+          })
+          label.textContent = formatLatency(edge.latency)
+          scene.appendChild(label)
         }
       }
 
-      // 节点
-      for (const node of s.nodes) {
-        const isMachine = node.type === 'machine', isSel = selectedKeyRef.current === node.key, r = isMachine ? 13 : 9
-        const grp = svgEl('g', { cursor: 'pointer', tabindex: '0', role: 'button', 'aria-label': node.label })
-        const hit = svgEl('circle', { cx: node.x, cy: node.y, r: r+8, fill: 'transparent' })
-        grp.appendChild(hit)
-        if (isSel) {
-          const ring = svgEl('circle', { cx: node.x, cy: node.y, r: r+5, fill: 'none', stroke: '#1677ff', 'stroke-width': '2.5', 'stroke-opacity': '.5' })
-          grp.appendChild(ring)
+      for (const node of state.nodes) {
+        const isMachine = node.type === 'machine'
+        const isSelected = state.selectedKey === node.key
+        const radius = isMachine ? 13 : 9
+
+        const group = svgEl('g', {
+          cursor: 'pointer',
+          tabindex: '0',
+          role: 'button',
+          'aria-label': node.label,
+        })
+        group.appendChild(svgEl('circle', { cx: node.x, cy: node.y, r: radius + 8, fill: 'transparent' }))
+
+        if (isSelected) {
+          group.appendChild(
+            svgEl('circle', {
+              cx: node.x,
+              cy: node.y,
+              r: radius + 5,
+              fill: 'none',
+              stroke: '#1677ff',
+              'stroke-width': '2.5',
+              'stroke-opacity': '.5',
+            }),
+          )
         }
-        const fill = node.active === false ? '#bfbfbf' : isMachine ? '#1677ff' : (node.latency != null ? latencyColor(node.latency) : '#40a9ff')
-        const circle = svgEl('circle', { cx: node.x, cy: node.y, r, fill, stroke: 'white', 'stroke-width': '2', filter: 'drop-shadow(0 1px 3px rgba(0,0,0,.18))' })
-        grp.appendChild(circle)
-        const lbl = svgEl('text', { x: node.x+r+6, y: node.y-2, 'font-size': '11', 'font-weight': '600', fill: '#1f2937', 'pointer-events': 'none' })
-        lbl.textContent = node.label.length > 18 ? node.label.slice(0,17)+'…' : node.label
-        const sub = svgEl('text', { x: node.x+r+6, y: node.y+10, 'font-size': '9', fill: '#8c8c8c', 'pointer-events': 'none' })
+
+        const fill =
+          node.active === false
+            ? '#bfbfbf'
+            : isMachine
+              ? '#1677ff'
+              : node.latency != null
+                ? latencyColor(node.latency)
+                : '#40a9ff'
+        group.appendChild(
+          svgEl('circle', {
+            cx: node.x,
+            cy: node.y,
+            r: radius,
+            fill,
+            stroke: 'white',
+            'stroke-width': '2',
+            filter: 'drop-shadow(0 1px 3px rgba(0,0,0,.18))',
+          }),
+        )
+
+        const label = svgEl('text', {
+          x: node.x + radius + 6,
+          y: node.y - 2,
+          'font-size': '11',
+          'font-weight': '600',
+          fill: '#1f2937',
+          'pointer-events': 'none',
+        })
+        label.textContent = node.label.length > 18 ? `${node.label.slice(0, 17)}…` : node.label
+        group.appendChild(label)
+
+        const sub = svgEl('text', {
+          x: node.x + radius + 6,
+          y: node.y + 10,
+          'font-size': '9',
+          fill: '#8c8c8c',
+          'pointer-events': 'none',
+        })
         sub.textContent = node.sub
-        grp.appendChild(lbl); grp.appendChild(sub)
-        grp.addEventListener('click', e => { e.stopPropagation(); onSelect?.(node) })
-        grp.addEventListener('keydown', e => { if (e.key==='Enter'||e.key===' ') onSelect?.(node) })
-        grp.addEventListener('pointerdown', e => { e.stopPropagation(); s.dragging = { node, startX: e.clientX, startY: e.clientY, ox: node.x, oy: node.y } })
-        g.appendChild(grp)
+        group.appendChild(sub)
+
+        group.addEventListener('click', (event) => {
+          event.stopPropagation()
+          onSelectRef.current?.(node.key)
+        })
+        group.addEventListener('keydown', (event) => {
+          if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault()
+            onSelectRef.current?.(node.key)
+          }
+        })
+        group.addEventListener('pointerdown', (event) => {
+          event.stopPropagation()
+          node.fixed = true
+          state.dragging = { node, startX: event.clientX, startY: event.clientY, ox: node.x, oy: node.y }
+          svg.setPointerCapture(event.pointerId)
+        })
+
+        scene.appendChild(group)
       }
-      s.animId = requestAnimationFrame(draw)
+
+      svg.replaceChildren(defs, scene)
     }
 
-    s.animId = requestAnimationFrame(draw)
-    return () => { stopped = true; cancelAnimationFrame(s.animId) }
-  }, [onSelect])
-
-  // 缩放平移
-  useEffect(() => {
-    const svg = svgRef.current; if (!svg) return
-    const s = stateRef.current; let panning = false, panStart = {x:0,y:0}, panOrigin = {x:0,y:0}
-    const onWheel = e => { e.preventDefault(); s.zoom = Math.max(.2, Math.min(4, s.zoom*(e.deltaY<0?1.1:.91))) }
-    const onDown = e => { if (s.dragging) return; panning=true; panStart={x:e.clientX,y:e.clientY}; panOrigin={x:s.panX,y:s.panY}; svg.setPointerCapture(e.pointerId) }
-    const onMove = e => {
-      if (s.dragging) { const d=s.dragging; d.node.x=d.ox+(e.clientX-d.startX)/s.zoom; d.node.y=d.oy+(e.clientY-d.startY)/s.zoom; d.node.vx=0; d.node.vy=0; return }
-      if (!panning) return; s.panX=panOrigin.x+(e.clientX-panStart.x); s.panY=panOrigin.y+(e.clientY-panStart.y)
+    function frame() {
+      if (stopped) return
+      const width = svg.clientWidth || 800
+      const height = svg.clientHeight || 500
+      const shift = state.simulation.tick(width / 2, height / 2)
+      if (shift > SETTLE_EPSILON || state.dirty) {
+        state.dirty = false
+        render()
+      }
+      state.animId = requestAnimationFrame(frame)
     }
-    const onUp = () => { panning=false; s.dragging=null }
-    svg.addEventListener('wheel', onWheel, {passive:false}); svg.addEventListener('pointerdown', onDown); svg.addEventListener('pointermove', onMove); svg.addEventListener('pointerup', onUp)
-    return () => { svg.removeEventListener('wheel', onWheel); svg.removeEventListener('pointerdown', onDown); svg.removeEventListener('pointermove', onMove); svg.removeEventListener('pointerup', onUp) }
+
+    state.animId = requestAnimationFrame(frame)
+    return () => {
+      stopped = true
+      cancelAnimationFrame(state.animId)
+    }
   }, [])
 
-  const reset = () => { const s = stateRef.current; s.zoom=1; s.panX=0; s.panY=0 }
-  const zoomIn  = () => { stateRef.current.zoom = Math.min(4, stateRef.current.zoom*1.2) }
-  const zoomOut = () => { stateRef.current.zoom = Math.max(.2, stateRef.current.zoom*.83) }
+  useEffect(() => {
+    const svg = svgRef.current
+    if (!svg) return
+    const state = stateRef.current
+    let panning = false
+    let panStart = { x: 0, y: 0 }
+    let panOrigin = { x: 0, y: 0 }
+
+    function onWheel(event) {
+      event.preventDefault()
+      state.zoom = Math.max(0.2, Math.min(4, state.zoom * (event.deltaY < 0 ? 1.1 : 0.91)))
+      state.dirty = true
+    }
+
+    function onPointerDown(event) {
+      if (state.dragging) return
+      panning = true
+      panStart = { x: event.clientX, y: event.clientY }
+      panOrigin = { x: state.panX, y: state.panY }
+      svg.setPointerCapture(event.pointerId)
+    }
+
+    function onPointerMove(event) {
+      if (state.dragging) {
+        const drag = state.dragging
+        drag.node.x = drag.ox + (event.clientX - drag.startX) / state.zoom
+        drag.node.y = drag.oy + (event.clientY - drag.startY) / state.zoom
+        drag.node.vx = 0
+        drag.node.vy = 0
+        drag.moved = true
+        state.dirty = true
+        return
+      }
+      if (!panning) return
+      state.panX = panOrigin.x + (event.clientX - panStart.x)
+      state.panY = panOrigin.y + (event.clientY - panStart.y)
+      state.dirty = true
+    }
+
+    function onPointerUp() {
+      panning = false
+      if (!state.dragging) return
+      state.dragging.node.fixed = false
+      // 仅在真正拖动后重新收敛，单击查看详情不扰动布局
+      if (state.dragging.moved) state.simulation.reheat()
+      state.dragging = null
+    }
+
+    svg.addEventListener('wheel', onWheel, { passive: false })
+    svg.addEventListener('pointerdown', onPointerDown)
+    svg.addEventListener('pointermove', onPointerMove)
+    svg.addEventListener('pointerup', onPointerUp)
+    svg.addEventListener('pointercancel', onPointerUp)
+    return () => {
+      svg.removeEventListener('wheel', onWheel)
+      svg.removeEventListener('pointerdown', onPointerDown)
+      svg.removeEventListener('pointermove', onPointerMove)
+      svg.removeEventListener('pointerup', onPointerUp)
+      svg.removeEventListener('pointercancel', onPointerUp)
+    }
+  }, [])
+
+  const applyZoom = (factor) => {
+    const state = stateRef.current
+    state.zoom = Math.max(0.2, Math.min(4, state.zoom * factor))
+    state.dirty = true
+  }
+
+  const resetView = () => {
+    const state = stateRef.current
+    state.zoom = 1
+    state.panX = 0
+    state.panY = 0
+    state.simulation.reheat()
+    state.dirty = true
+  }
 
   return (
     <div className={styles.wrap}>
@@ -177,9 +465,15 @@ export default function TopologyGraph({ machines, selected, onSelect }) {
       )}
       <svg ref={svgRef} className={styles.svg} role="img" aria-label="NexusTier 拓扑图" />
       <div className={styles.controls}>
-        <button className={styles.ctrlBtn} onClick={zoomIn} title="放大">＋</button>
-        <button className={styles.ctrlBtn} onClick={zoomOut} title="缩小">－</button>
-        <button className={styles.ctrlBtn} onClick={reset} title="还原">⊙</button>
+        <button className={styles.ctrlBtn} onClick={() => applyZoom(1.2)} title="放大" aria-label="放大">
+          ＋
+        </button>
+        <button className={styles.ctrlBtn} onClick={() => applyZoom(0.83)} title="缩小" aria-label="缩小">
+          －
+        </button>
+        <button className={styles.ctrlBtn} onClick={resetView} title="还原视图" aria-label="还原视图">
+          ⊙
+        </button>
       </div>
       <div className={styles.hint}>滚轮缩放 · 拖拽平移 · 点击节点查看详情</div>
     </div>
