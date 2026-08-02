@@ -64,18 +64,23 @@ func printPasswordHash(in io.Reader, out io.Writer) error {
 	return err
 }
 
-// guardedHandler wraps the API in a session guard, or returns it untouched when
-// the operator has deliberately opted out.
-func guardedHandler(settings config.Config, next http.Handler, logger *slog.Logger) (http.Handler, error) {
+// newProtector builds the console session guard, or a pass-through when the
+// operator has deliberately opted out.
+func newProtector(settings config.Config, logger *slog.Logger) (func(http.Handler) http.Handler, error) {
 	if !settings.AuthRequired() {
 		logger.Warn("console authentication is disabled",
 			"listen_addr", settings.ListenAddress,
 			"auth_mode", string(settings.AuthMode),
 			"hint", "anyone who can reach this address can read the full topology")
-		return next, nil
+		return func(next http.Handler) http.Handler { return next }, nil
 	}
 	credential, err := auth.NewCredential(settings.AuthUsername, settings.AuthPasswordHash)
 	if err != nil {
+		if errors.Is(err, auth.ErrMalformedHash) {
+			// The encoding is $-separated, and Compose interpolates an unquoted
+			// $ in .env away to an empty string.
+			return nil, fmt.Errorf("operator credential: %w; expected pbkdf2-sha256$<iterations>$<salt>$<key>, and in a Compose .env file the value must be wrapped in single quotes so $ is not interpolated", err)
+		}
 		return nil, fmt.Errorf("operator credential: %w", err)
 	}
 	signer, err := auth.NewSessionSigner([]byte(settings.SessionKey), settings.SessionTTL)
@@ -90,11 +95,17 @@ func guardedHandler(settings config.Config, next http.Handler, logger *slog.Logg
 		"subject", credential.Username,
 		"session_ttl", settings.SessionTTL.String(),
 		"secure_cookie", settings.SecureCookie)
-	return guard.Protect(next), nil
+	return guard.Protect, nil
 }
 
 func run(logger *slog.Logger) error {
 	settings, err := config.Load()
+	if err != nil {
+		return err
+	}
+	// Built before the pool and the workers: a rejected credential should fail
+	// with one clear error, not after background loops are already logging.
+	protect, err := newProtector(settings, logger)
 	if err != nil {
 		return err
 	}
@@ -138,10 +149,7 @@ func run(logger *slog.Logger) error {
 		retentionCleaner.Run(ctx)
 	}()
 
-	handler, err := guardedHandler(settings, api.New(pool, readmodel.NewStore(pool), worker, retentionCleaner), logger)
-	if err != nil {
-		return err
-	}
+	handler := protect(api.New(pool, readmodel.NewStore(pool), worker, retentionCleaner))
 
 	server := &http.Server{
 		Addr:              settings.ListenAddress,

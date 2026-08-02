@@ -61,7 +61,7 @@ POSTGRES_PASSWORD=secret
 NEXUSTIER_CONTROLLER_DATABASE_URL=postgres://nexustier:secret@postgres:5432/nexustier?sslmode=disable
 NEXUSTIER_GATEWAY_ADMISSION_TOKEN=aaabbbcccdddeee
 NEXUSTIER_CONTROLLER_AUTH_USERNAME=admin
-NEXUSTIER_CONTROLLER_AUTH_PASSWORD_HASH=pbkdf2-sha256$600000$salt$key
+NEXUSTIER_CONTROLLER_AUTH_PASSWORD_HASH='pbkdf2-sha256$600000$c2FsdHNhbHRzYWx0c2E$a2V5a2V5'
 NEXUSTIER_CONTROLLER_SESSION_KEY=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 ENV
   chmod 0600 "${path}"
@@ -180,6 +180,16 @@ test_preflight_accepts_disabled_auth_without_hash() {
   else
     log_fail "preflight passes without hash when auth_mode=disabled"
   fi
+  make_env_file "${WORK_DIR}/.env"
+}
+
+test_preflight_rejects_malformed_hash() {
+  make_env_file "${WORK_DIR}/.env"
+  sed -i "s|^NEXUSTIER_CONTROLLER_AUTH_PASSWORD_HASH=.*|NEXUSTIER_CONTROLLER_AUTH_PASSWORD_HASH=pbkdf2-sha256|" \
+    "${WORK_DIR}/.env"
+  clear_calls
+  assert_exits_with "preflight rejects a Compose-mangled password hash" 1 \
+    "必须用单引号包裹完整哈希" preflight
   make_env_file "${WORK_DIR}/.env"
 }
 
@@ -312,6 +322,7 @@ test_preflight_fails_without_env
 test_preflight_passes_with_valid_env
 test_preflight_fails_without_hash_when_required
 test_preflight_accepts_disabled_auth_without_hash
+test_preflight_rejects_malformed_hash
 test_rotate_token_rewrites_env
 test_rotate_token_never_prints_secret
 test_upgrade_rewrites_both_images

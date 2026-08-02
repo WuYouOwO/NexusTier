@@ -72,10 +72,27 @@ require_env_file() {
 }
 
 # read_env_value prints one value without sourcing the file, so a malformed line
-# cannot execute anything.
+# cannot execute anything. Surrounding quotes are stripped because Compose treats
+# them as delimiters rather than part of the value.
 read_env_value() {
-  local key="$1"
-  sed -n "s/^${key}=//p" "${ENV_FILE}" | tail -n 1
+  local key="$1" value
+  value="$(sed -n "s/^${key}=//p" "${ENV_FILE}" | tail -n 1)"
+  case "${value}" in
+    \'*\') value="${value:1:${#value}-2}" ;;
+    '"'*'"') value="${value:1:${#value}-2}" ;;
+  esac
+  printf '%s\n' "${value}"
+}
+
+assert_password_hash_shape() {
+  local value="$1" message="$2" scheme iterations salt key extra
+  IFS='$' read -r scheme iterations salt key extra <<<"${value}"
+  [[ "${scheme}" == "pbkdf2-sha256" \
+     && "${iterations}" =~ ^[0-9]+$ \
+     && "${iterations}" -ge 100000 \
+     && "${salt}" =~ ^[A-Za-z0-9+/]+$ \
+     && "${key}" =~ ^[A-Za-z0-9+/]+$ \
+     && -z "${extra}" ]] || fail "${message}"
 }
 
 # replace_env_value rewrites one key in place through a private temp file and
@@ -123,9 +140,15 @@ cmd_preflight() {
   done
   # Compose publishes the controller on 0.0.0.0:8080 inside the container, which
   # is non-loopback, so auto mode refuses to start without a password hash.
-  if [[ -z "$(read_env_value NEXUSTIER_CONTROLLER_AUTH_PASSWORD_HASH)" \
-     && "$(read_env_value NEXUSTIER_CONTROLLER_AUTH_MODE)" != "disabled" ]]; then
+  local auth_hash auth_mode
+  auth_hash="$(read_env_value NEXUSTIER_CONTROLLER_AUTH_PASSWORD_HASH)"
+  auth_mode="$(read_env_value NEXUSTIER_CONTROLLER_AUTH_MODE)"
+  if [[ -z "${auth_hash}" && "${auth_mode}" != "disabled" ]]; then
     fail "缺少 NEXUSTIER_CONTROLLER_AUTH_PASSWORD_HASH；运行 ${SCRIPT_NAME} rotate-console-password 生成"
+  fi
+  if [[ -n "${auth_hash}" && "${auth_mode}" != "disabled" ]]; then
+    assert_password_hash_shape "${auth_hash}" \
+      "NEXUSTIER_CONTROLLER_AUTH_PASSWORD_HASH 格式错误；Compose .env 中必须用单引号包裹完整哈希"
   fi
   compose config --quiet
   log "preflight 通过"
@@ -267,9 +290,11 @@ cmd_rotate_console_password() {
   # The plaintext travels on stdin only, so it never reaches the process list.
   hash="$(printf '%s\n' "${password}" | docker run --rm -i "${image}" -hash-password)"
   password=""
-  [[ "${hash}" == pbkdf2-sha256\$* ]] || fail "生成的哈希格式不符合预期"
+  assert_password_hash_shape "${hash}" "生成的哈希格式不符合预期"
 
-  replace_env_value NEXUSTIER_CONTROLLER_AUTH_PASSWORD_HASH "${hash}"
+  # Single-quoted: the hash separates its fields with $, which Compose would
+  # otherwise interpolate away in an unquoted .env value.
+  replace_env_value NEXUSTIER_CONTROLLER_AUTH_PASSWORD_HASH "'${hash}'"
   compose up -d --force-recreate controller
   wait_for_http "${CONTROLLER_URL}/healthz" 200 "controller /healthz"
   log "口令已更新。现有会话在 TTL 到期前仍有效；如需立即失效，同时轮换 NEXUSTIER_CONTROLLER_SESSION_KEY。"

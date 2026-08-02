@@ -24,8 +24,10 @@ const (
 )
 
 // ErrMalformedHash reports a password hash the controller cannot interpret.
-// The message never echoes the hash so it stays out of logs.
-var ErrMalformedHash = errors.New("password hash is malformed")
+// The message states the expected shape but never echoes the value, so it stays
+// out of logs.
+var ErrMalformedHash = errors.New(
+	"password hash is malformed; expected pbkdf2-sha256$<iterations>$<base64 salt>$<base64 key>")
 
 // HashPassword derives a storable hash from a plaintext password. The result is
 // safe to place in an environment variable or secret store.

@@ -181,11 +181,25 @@ docker run --rm -i ghcr.io/wuyouowo/nexustier-controller:sha-0d80c62 -hash-passw
 路径；否则它会成为位置参数，标志不会生效。
 
 交互输入口令后回车，命令会打印形如 `pbkdf2-sha256$600000$...` 的哈希。把它写入
-`.env`：
+`.env`，**值必须用单引号包裹**：
 
 ```bash
-printf 'NEXUSTIER_CONTROLLER_AUTH_PASSWORD_HASH=%s\n' '<粘贴上一步的哈希>' >> .env
+printf "NEXUSTIER_CONTROLLER_AUTH_PASSWORD_HASH='%s'\n" '<粘贴上一步的哈希>' >> .env
 ```
+
+单引号是必需的，不是风格问题。哈希以 `$` 分隔字段，而 Compose 会对 `.env` 中未加
+引号和双引号的值做变量插值，`$600000`、`$<salt>`、`$<key>` 会被替换为空字符串，容器
+里只剩 `pbkdf2-sha256`。Controller 随后以
+`operator credential: password hash is malformed` 退出。单引号值按字面传递。
+
+写入后确认文件里确实带引号且字段完整：
+
+```bash
+grep -c '^NEXUSTIER_CONTROLLER_AUTH_PASSWORD_HASH=' .env
+awk -F= "/^NEXUSTIER_CONTROLLER_AUTH_PASSWORD_HASH=/ {print gsub(/\\$/, \"\", \$2)}" .env
+```
+
+预期分别输出 `1` 和 `3`：一条记录，值中保留三个 `$`。
 
 哈希本身不可逆，但它是登录凭据的唯一校验依据，仍应按机密对待。`.env` 权限保持 `600`。
 

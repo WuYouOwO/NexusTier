@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"errors"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -69,7 +70,7 @@ func TestPrintPasswordHashRejectsAnEmptyPassword(t *testing.T) {
 	}
 }
 
-func TestGuardedHandlerProtectsTheAPIWhenCredentialsArePresent(t *testing.T) {
+func TestNewProtectorProtectsTheAPIWhenCredentialsArePresent(t *testing.T) {
 	hash, err := auth.HashPassword("operator secret")
 	if err != nil {
 		t.Fatalf("HashPassword returned %v", err)
@@ -85,13 +86,13 @@ func TestGuardedHandlerProtectsTheAPIWhenCredentialsArePresent(t *testing.T) {
 	reached := false
 	next := http.HandlerFunc(func(http.ResponseWriter, *http.Request) { reached = true })
 
-	handler, err := guardedHandler(settings, next, slog.New(slog.DiscardHandler))
+	protect, err := newProtector(settings, slog.New(slog.DiscardHandler))
 	if err != nil {
-		t.Fatalf("guardedHandler returned %v", err)
+		t.Fatalf("newProtector returned %v", err)
 	}
 
 	recorder := httptest.NewRecorder()
-	handler.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/v1/topology", nil))
+	protect(next).ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/v1/topology", nil))
 
 	if recorder.Code != http.StatusUnauthorized {
 		t.Fatalf("expected 401 without a session, got %d", recorder.Code)
@@ -101,7 +102,7 @@ func TestGuardedHandlerProtectsTheAPIWhenCredentialsArePresent(t *testing.T) {
 	}
 }
 
-func TestGuardedHandlerPassesThroughWhenAuthenticationIsDisabled(t *testing.T) {
+func TestNewProtectorPassesThroughWhenAuthenticationIsDisabled(t *testing.T) {
 	settings := config.Config{
 		ListenAddress: "0.0.0.0:8080",
 		AuthMode:      config.AuthModeDisabled,
@@ -109,13 +110,38 @@ func TestGuardedHandlerPassesThroughWhenAuthenticationIsDisabled(t *testing.T) {
 	reached := false
 	next := http.HandlerFunc(func(http.ResponseWriter, *http.Request) { reached = true })
 
-	handler, err := guardedHandler(settings, next, slog.New(slog.DiscardHandler))
+	protect, err := newProtector(settings, slog.New(slog.DiscardHandler))
 	if err != nil {
-		t.Fatalf("guardedHandler returned %v", err)
+		t.Fatalf("newProtector returned %v", err)
 	}
-	handler.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/v1/topology", nil))
+	protect(next).ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/v1/topology", nil))
 
 	if !reached {
 		t.Fatal("expected the request to reach the API when auth is disabled")
+	}
+}
+
+func TestNewProtectorExplainsAComposeMangledHash(t *testing.T) {
+	settings := config.Config{
+		ListenAddress:    "0.0.0.0:8080",
+		AuthMode:         config.AuthModeRequired,
+		AuthUsername:     "admin",
+		AuthPasswordHash: "pbkdf2-sha256$600000$$",
+		SessionKey:       strings.Repeat("k", 32),
+		SessionTTL:       time.Hour,
+	}
+
+	_, err := newProtector(settings, slog.New(slog.DiscardHandler))
+	if err == nil {
+		t.Fatal("expected a malformed hash to be rejected")
+	}
+	if !errors.Is(err, auth.ErrMalformedHash) {
+		t.Fatalf("error does not wrap ErrMalformedHash: %v", err)
+	}
+	if !strings.Contains(err.Error(), "single quotes") {
+		t.Fatalf("error should point at Compose quoting, got %q", err)
+	}
+	if strings.Contains(err.Error(), settings.AuthPasswordHash) {
+		t.Fatal("error must not echo the hash value")
 	}
 }
