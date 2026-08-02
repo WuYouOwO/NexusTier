@@ -1,3 +1,8 @@
+2026/8:本项目已暂停
+
+---
+
+
 # 🌐 NexusTier
 
 > **Orchestrating the Next-Generation Zero-Trust Mesh Network.**  
