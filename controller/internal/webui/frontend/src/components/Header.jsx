@@ -39,6 +39,10 @@ export default function Header({ status, updatedAt }) {
           <i className={styles.dot} />
           {s.label}
         </div>
+        {/* 表单提交而非 fetch：登出走 SameSite=Strict 的 POST，浏览器会带上会话 cookie */}
+        <form method="post" action="/logout">
+          <button type="submit" className={styles.logout}>退出</button>
+        </form>
       </div>
     </header>
   )
